@@ -32,16 +32,16 @@
     <script type="text/babel">
         const { useState, useEffect } = React;
 
-        // ⚠️⚠️⚠️ 這裡請換成你自己的 Firebase 設定碼 ⚠️⚠️⚠️
+        // 整合了你專屬的 Firebase 設定碼
         const firebaseConfig = {
-  apiKey: "AIzaSyB9VcueWD3AdLENr5Jdp0__pRVCYtJ95no",
-  authDomain: "pms-kingtex.firebaseapp.com",
-  projectId: "pms-kingtex",
-  storageBucket: "pms-kingtex.firebasestorage.app",
-  messagingSenderId: "950519740298",
-  appId: "1:950519740298:web:19e78a0fb18f6788083a73",
-  measurementId: "G-Y9DL3C4X2E"
-};
+            apiKey: "AIzaSyB9VcueWD3AdLENr5Jdp0__pRVCYtJ95no",
+            authDomain: "pms-kingtex.firebaseapp.com",
+            projectId: "pms-kingtex",
+            storageBucket: "pms-kingtex.firebasestorage.app",
+            messagingSenderId: "950519740298",
+            appId: "1:950519740298:web:19e78a0fb18f6788083a73",
+            measurementId: "G-Y9DL3C4X2E"
+        };
 
         // 初始化 Firebase (防止重複初始化)
         if (!firebase.apps.length) {
