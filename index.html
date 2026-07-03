@@ -103,7 +103,6 @@
 
             useEffect(() => {
                 if (!firebaseUser) return;
-                // 即時監聽資料庫
                 const unsubscribe = db.collection('po_orders').onSnapshot(snapshot => {
                     const fetchedOrders = snapshot.docs.map(doc => ({
                         dbId: doc.id,
@@ -145,12 +144,10 @@
             const handleFileUpload = (e) => {
                 const file = e.target.files[0];
                 if (file && file.type === 'application/pdf') {
-                    // 防呆機制：限制檔案不得超過 5MB
                     if (file.size > 5 * 1024 * 1024) {
                         alert("檔案太大囉！請上傳 5MB 以下的 PDF。");
                         return;
                     }
-                    // 先產生本地預覽網址
                     setFormData({ ...formData, pdfUrl: URL.createObjectURL(file), pdfFile: file });
                 } else if (file) {
                     alert("請上傳 PDF 格式的檔案！");
@@ -163,7 +160,6 @@
 
                 let finalPdfUrl = null;
                 
-                // 雲端上傳 PDF (Firebase Storage)
                 if (formData.pdfFile && isOnline) {
                     try {
                         const fileRef = storage.ref(`po_pdfs/${Date.now()}_${formData.pdfFile.name}`);
@@ -185,7 +181,7 @@
                     status: '處理中', 
                     amount: parseInt(formData.amount, 10),
                     items: formData.items.filter(item => item.model !== ''), 
-                    pdfUrl: finalPdfUrl, // 存入雲端網址
+                    pdfUrl: finalPdfUrl,
                     createdAt: new Date().toISOString()
                 };
 
@@ -223,7 +219,6 @@
                 }
             };
 
-            // 統計與過濾
             const totalAmount = orders.reduce((sum, order) => sum + order.amount, 0);
             let processedOrders = orders.filter(o => {
                 if (activeFilter === 'PROCESSING' && o.status !== '處理中') return false;
@@ -245,7 +240,24 @@
 
             return (
                 <div className="max-w-6xl mx-auto p-4 md:p-8 space-y-5">
-                    {/* 頂部控制列 */}
+                    {/* 登入視窗 */}
+                    {showLoginModal && (
+                        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+                            <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm">
+                                <h2 className="text-lg font-bold mb-4">管理員登入</h2>
+                                <form onSubmit={handleLogin} className="space-y-3">
+                                    <input type="text" placeholder="帳號" value={loginForm.username} onChange={e => setLoginForm({...loginForm, username: e.target.value})} className="w-full border p-2 rounded" required />
+                                    <input type="password" placeholder="密碼" value={loginForm.password} onChange={e => setLoginForm({...loginForm, password: e.target.value})} className="w-full border p-2 rounded" required />
+                                    {loginError && <p className="text-red-500 text-xs">{loginError}</p>}
+                                    <div className="flex gap-2 mt-4">
+                                        <button type="button" onClick={() => setShowLoginModal(false)} className="flex-1 py-2 bg-gray-100 rounded text-sm">取消</button>
+                                        <button type="submit" className="flex-1 py-2 bg-blue-600 text-white rounded text-sm">登入</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    )}
+
                     <div className="flex flex-col md:flex-row justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-gray-200">
                         <div>
                             <h1 className="text-xl font-bold text-gray-900">採購交期追蹤系統</h1>
@@ -268,7 +280,6 @@
                         </div>
                     </div>
 
-                    {/* 統計與按鈕 */}
                     <div className="flex flex-wrap gap-3">
                         <div onClick={() => setActiveFilter(activeFilter === 'PROCESSING' ? 'ALL' : 'PROCESSING')} className={`px-4 py-2 min-w-[110px] rounded-lg border shadow-sm cursor-pointer ${activeFilter === 'PROCESSING' ? 'bg-blue-50 border-blue-400' : 'bg-white hover:bg-gray-50'}`}>
                             <p className="text-xs text-gray-500 font-medium">處理中</p>
@@ -287,7 +298,6 @@
                         </button>
                     </div>
 
-                    {/* 搜尋列 */}
                     <div className="bg-white p-3 rounded-lg shadow-sm border border-gray-200 flex flex-wrap gap-4 items-center">
                         <div className="flex-1 relative">
                             <i className="fas fa-search absolute left-3 top-3 text-gray-400"></i>
@@ -301,7 +311,6 @@
                         </div>
                     </div>
 
-                    {/* 新增表單 */}
                     {showAddForm && (
                         <div className="bg-white p-5 rounded-xl shadow-md border border-gray-300">
                             <h2 className="font-bold mb-3 border-b pb-2"><i className="fas fa-plus mr-2 text-gray-700"></i>填寫採購單</h2>
@@ -336,7 +345,6 @@
                         </div>
                     )}
 
-                    {/* 資料表 */}
                     <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                         <table className="w-full text-left">
                             <thead className="bg-gray-100 text-sm text-gray-600">
@@ -381,7 +389,6 @@
                                                 <tr className="bg-gray-50 border-b-2">
                                                     <td colSpan="8" className="p-0">
                                                         <div className="p-6 flex flex-col md:flex-row gap-6 shadow-inner">
-                                                            {/* 左側細項 */}
                                                             <div className="flex-1">
                                                                 <div className="flex justify-between mb-3 border-b pb-2">
                                                                     <h4 className="font-bold">採購明細</h4>
@@ -419,7 +426,6 @@
                                                                     </ul>
                                                                 )}
                                                             </div>
-                                                            {/* 右側資訊 */}
                                                             <div className="w-full md:w-64 space-y-4">
                                                                 <div className="bg-white p-3 border rounded-lg text-center shadow-sm">
                                                                     <p className="text-xs text-gray-500 mb-1">訂單總金額</p>
@@ -433,7 +439,6 @@
                                                             </div>
                                                         </div>
 
-                                                        {/* 結案區塊 */}
                                                         {order.status !== '已收貨' ? (
                                                             <div className="m-4 p-3 bg-white border border-blue-100 rounded-lg">
                                                                 <h4 className="text-sm font-bold mb-2"><i className="fas fa-check-circle text-green-500 mr-1"></i>標記收貨</h4>
