@@ -5,15 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>採購單管理系統</title>
     
+    <!-- Tailwind CSS (樣式) -->
     <script src="https://cdn.tailwindcss.com"></script>
     
+    <!-- FontAwesome (圖示) -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
+    <!-- React & ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     
+    <!-- Babel (讓瀏覽器看得懂 React JSX 語法) -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
+    <!-- Firebase SDK (Compat 舊版寫法，最適合單一 HTML 檔案) -->
     <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore-compat.js"></script>
@@ -21,6 +26,7 @@
 </head>
 <body class="bg-gray-50 text-gray-800 font-sans">
     
+    <!-- React 應用程式掛載點 -->
     <div id="root"></div>
 
     <script type="text/babel">
@@ -46,7 +52,10 @@
         const storage = firebase.storage();
 
         function App() {
-            const TODAY = new Date('2026-07-03');
+            // 動態取得當前電腦的本地日期
+            const d = new Date();
+            const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+            const todayDate = new Date(todayStr);
 
             const [firebaseUser, setFirebaseUser] = useState(null);
             const [isLoading, setIsLoading] = useState(true);
@@ -72,11 +81,11 @@
 
             // 新增表單 (加入 displayId 狀態)
             const initialFormState = {
-                displayId: '', vendor: '', orderDate: TODAY.toISOString().split('T')[0], deliveryDate: '', amount: '',
+                displayId: '', vendor: '', orderDate: todayStr, deliveryDate: '', amount: '',
                 items: [{ model: '', quantity: 1, remark: '' }], pdfUrl: null, pdfFile: null
             };
             const [formData, setFormData] = useState(initialFormState);
-            const [completeData, setCompleteData] = useState({ date: TODAY.toISOString().split('T')[0], remark: '' });
+            const [completeData, setCompleteData] = useState({ date: todayStr, remark: '' });
 
             useEffect(() => {
                 const handleOnline = () => setIsOnline(true);
@@ -126,7 +135,7 @@
             const getAlertInfo = (dateStr, status) => {
                 if (status === '已收貨') return { text: '無', color: 'text-gray-500', bg: 'bg-gray-100' };
                 const targetDate = new Date(dateStr);
-                const diffTime = targetDate - TODAY;
+                const diffTime = targetDate - todayDate;
                 const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
                 if (diffDays < 0) return { text: '● 已逾期', color: 'text-red-700', bg: 'bg-red-100' };
                 if (diffDays <= 3) return { text: '● 即將到期', color: 'text-orange-700', bg: 'bg-orange-100' };
@@ -150,7 +159,12 @@
 
             const handleSubmit = async (e) => {
                 e.preventDefault();
-                if (!formData.vendor || !formData.deliveryDate || !formData.amount) return;
+                
+                // 防呆提示：如果必填沒填就跳出視窗提醒
+                if (!formData.vendor || !formData.deliveryDate) {
+                    alert("請確實填寫「供應商」及「預計交期」！");
+                    return;
+                }
 
                 let finalPdfUrl = null;
                 
@@ -175,7 +189,8 @@
                     orderDate: formData.orderDate, 
                     deliveryDate: formData.deliveryDate,
                     status: '處理中', 
-                    amount: parseInt(formData.amount, 10),
+                    // 金額選填，若空則預設為 0
+                    amount: parseInt(formData.amount || 0, 10),
                     items: formData.items.filter(item => item.model !== ''), 
                     pdfUrl: finalPdfUrl,
                     createdAt: new Date().toISOString()
@@ -198,7 +213,7 @@
                         status: '已收貨',
                         completionData: { date: completeData.date, remark: completeData.remark }
                     });
-                    setCompleteData({ date: TODAY.toISOString().split('T')[0], remark: '' });
+                    setCompleteData({ date: todayStr, remark: '' });
                     setExpandedOrderId(null);
                 } catch (error) {
                     console.error("更新失敗:", error);
@@ -316,7 +331,8 @@
                                     <div><label className="block text-xs text-gray-700">供應商</label><input type="text" value={formData.vendor} onChange={e => setFormData({...formData, vendor: e.target.value})} className="w-full px-3 py-1.5 border rounded text-sm" required /></div>
                                     <div><label className="block text-xs text-gray-700">訂單日期</label><input type="date" value={formData.orderDate} onChange={e => setFormData({...formData, orderDate: e.target.value})} className="w-full px-3 py-1.5 border rounded text-sm" required /></div>
                                     <div><label className="block text-xs text-gray-700">預計交期</label><input type="date" value={formData.deliveryDate} onChange={e => setFormData({...formData, deliveryDate: e.target.value})} className="w-full px-3 py-1.5 border rounded text-sm" required /></div>
-                                    <div><label className="block text-xs text-gray-700">總金額 (NT$)</label><input type="number" value={formData.amount} onChange={e => setFormData({...formData, amount: e.target.value})} className="w-full px-3 py-1.5 border rounded text-sm" required /></div>
+                                    {/* 移除 required 屬性，讓金額變成選填 */}
+                                    <div><label className="block text-xs text-gray-700">總金額 (NT$)</label><input type="number" value={formData.amount} onChange={e => setFormData({...formData, amount: e.target.value})} className="w-full px-3 py-1.5 border rounded text-sm" /></div>
                                     <div className="md:col-span-1">
                                         <label className="block text-xs text-gray-700 mb-1">夾帶 PDF (上限 5MB)</label>
                                         <input type="file" accept="application/pdf" onChange={handleFileUpload} className="w-full text-sm file:mr-4 file:py-1.5 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
