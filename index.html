@@ -82,10 +82,10 @@
             const [loginForm, setLoginForm] = useState({ username: '', password: '' });
             const [loginError, setLoginError] = useState('');
 
-            // 新增表單 (加入 displayId 狀態)
+            // 新增表單 (加入 displayId 狀態以及細項 vendorModel)
             const initialFormState = {
                 displayId: '', vendor: '', orderDate: todayStr, deliveryDate: '', amount: '',
-                items: [{ model: '', quantity: 1, remark: '' }], pdfUrl: null, pdfFile: null
+                items: [{ model: '', vendorModel: '', quantity: 1, remark: '' }], pdfUrl: null, pdfFile: null
             };
             const [formData, setFormData] = useState(initialFormState);
             const [completeData, setCompleteData] = useState({ date: todayStr, remark: '' });
@@ -194,7 +194,7 @@
                     status: '處理中', 
                     // 金額選填，若空則預設為 0
                     amount: parseInt(formData.amount || 0, 10),
-                    items: formData.items.filter(item => item.model !== ''), 
+                    items: formData.items.filter(item => item.model !== '' || item.vendorModel !== ''), 
                     pdfUrl: finalPdfUrl,
                     createdAt: new Date().toISOString()
                 };
@@ -225,7 +225,7 @@
             };
 
             const saveEditedItems = async () => {
-                const validItems = editingItems.items.filter(item => item.model.trim() !== '');
+                const validItems = editingItems.items.filter(item => item.model.trim() !== '' || item.vendorModel?.trim() !== '');
                 try {
                     await db.collection('po_orders').doc(editingItems.orderId).update({ items: validItems });
                     setEditingItems({ orderId: null, items: [] });
@@ -382,13 +382,14 @@
                                 <div className="bg-gray-50 p-3 rounded border">
                                     <div className="flex justify-between items-center mb-2">
                                         <h3 className="text-xs font-bold">採購細項</h3>
-                                        <button type="button" onClick={() => setFormData({...formData, items: [...formData.items, {model:'', quantity:1, remark:''}]})} className="text-xs text-blue-600 font-medium"><i className="fas fa-plus mr-1"></i>新增一列</button>
+                                        <button type="button" onClick={() => setFormData({...formData, items: [...formData.items, {model:'', vendorModel:'', quantity:1, remark:''}]})} className="text-xs text-blue-600 font-medium"><i className="fas fa-plus mr-1"></i>新增一列</button>
                                     </div>
                                     {formData.items.map((item, index) => (
-                                        <div key={index} className="flex gap-2 mb-2">
-                                            <input type="text" placeholder="機型" value={item.model} onChange={e => {const n=[...formData.items]; n[index].model=e.target.value; setFormData({...formData, items: n})}} className="w-1/3 px-2 py-1 text-sm border rounded" required />
-                                            <input type="number" placeholder="數量" value={item.quantity} onChange={e => {const n=[...formData.items]; n[index].quantity=e.target.value; setFormData({...formData, items: n})}} className="w-16 px-2 py-1 text-sm border rounded text-center" required />
-                                            <input type="text" placeholder="備註" value={item.remark} onChange={e => {const n=[...formData.items]; n[index].remark=e.target.value; setFormData({...formData, items: n})}} className="flex-1 px-2 py-1 text-sm border rounded" />
+                                        <div key={index} className="flex gap-2 mb-2 items-center">
+                                            <input type="text" placeholder="精機型號" value={item.model} onChange={e => {const n=[...formData.items]; n[index].model=e.target.value; setFormData({...formData, items: n})}} className="w-1/4 px-2 py-1 text-sm border rounded outline-none focus:ring-1 focus:ring-blue-500" required />
+                                            <input type="text" placeholder="廠商型號" value={item.vendorModel} onChange={e => {const n=[...formData.items]; n[index].vendorModel=e.target.value; setFormData({...formData, items: n})}} className="w-1/4 px-2 py-1 text-sm border rounded outline-none focus:ring-1 focus:ring-blue-500" />
+                                            <input type="number" placeholder="數量" value={item.quantity} onChange={e => {const n=[...formData.items]; n[index].quantity=e.target.value; setFormData({...formData, items: n})}} className="w-16 px-2 py-1 text-sm border rounded text-center outline-none focus:ring-1 focus:ring-blue-500" required min="1" />
+                                            <input type="text" placeholder="備註" value={item.remark} onChange={e => {const n=[...formData.items]; n[index].remark=e.target.value; setFormData({...formData, items: n})}} className="flex-1 px-2 py-1 text-sm border rounded outline-none focus:ring-1 focus:ring-blue-500" />
                                             <button type="button" onClick={() => setFormData({...formData, items: formData.items.filter((_,i)=>i!==index)})} disabled={formData.items.length===1} className="text-gray-400 hover:text-red-500 disabled:opacity-30"><i className="fas fa-trash-alt"></i></button>
                                         </div>
                                     ))}
@@ -459,10 +460,11 @@
                                                                 {editingItems.orderId === order.dbId ? (
                                                                     <div className="space-y-2">
                                                                         {editingItems.items.map((item, idx) => (
-                                                                            <div key={idx} className="flex gap-2">
-                                                                                <input className="border p-1 text-sm w-1/3 rounded" value={item.model} onChange={e=>{const n=[...editingItems.items]; n[idx].model=e.target.value; setEditingItems({...editingItems,items:n})}}/>
-                                                                                <input type="number" className="border p-1 text-sm w-16 rounded" value={item.quantity} onChange={e=>{const n=[...editingItems.items]; n[idx].quantity=e.target.value; setEditingItems({...editingItems,items:n})}}/>
-                                                                                <input className="border p-1 text-sm flex-1 rounded" value={item.remark} onChange={e=>{const n=[...editingItems.items]; n[idx].remark=e.target.value; setEditingItems({...editingItems,items:n})}}/>
+                                                                            <div key={idx} className="flex gap-2 items-center">
+                                                                                <input className="border p-1 text-sm w-1/4 rounded outline-none focus:ring-1 focus:ring-blue-500" placeholder="精機型號" value={item.model} onChange={e=>{const n=[...editingItems.items]; n[idx].model=e.target.value; setEditingItems({...editingItems,items:n})}}/>
+                                                                                <input className="border p-1 text-sm w-1/4 rounded outline-none focus:ring-1 focus:ring-blue-500" placeholder="廠商型號" value={item.vendorModel || ''} onChange={e=>{const n=[...editingItems.items]; n[idx].vendorModel=e.target.value; setEditingItems({...editingItems,items:n})}}/>
+                                                                                <input type="number" className="border p-1 text-sm w-16 rounded text-center outline-none focus:ring-1 focus:ring-blue-500" placeholder="數量" value={item.quantity} onChange={e=>{const n=[...editingItems.items]; n[idx].quantity=e.target.value; setEditingItems({...editingItems,items:n})}}/>
+                                                                                <input className="border p-1 text-sm flex-1 rounded outline-none focus:ring-1 focus:ring-blue-500" placeholder="備註" value={item.remark} onChange={e=>{const n=[...editingItems.items]; n[idx].remark=e.target.value; setEditingItems({...editingItems,items:n})}}/>
                                                                                 <button onClick={()=>{const n=editingItems.items.filter((_,i)=>i!==idx); setEditingItems({...editingItems,items:n})}} className="text-gray-400 hover:text-red-500"><i className="fas fa-trash-alt"></i></button>
                                                                             </div>
                                                                         ))}
@@ -470,10 +472,11 @@
                                                                 ) : (
                                                                     <ul className="space-y-2">
                                                                         {order.items?.map((item, idx) => (
-                                                                            <li key={idx} className="flex bg-white p-2 border rounded shadow-sm">
-                                                                                <span className="font-semibold w-1/3">{item.model}</span>
-                                                                                <span className="w-16 text-center bg-gray-100 rounded">x {item.quantity}</span>
-                                                                                <span className="flex-1 text-gray-500 ml-3">{item.remark}</span>
+                                                                            <li key={idx} className="flex bg-white p-2 border rounded shadow-sm items-center gap-2">
+                                                                                <span className="font-semibold w-1/4 truncate text-sm" title={item.model}>{item.model}</span>
+                                                                                <span className="text-gray-600 w-1/4 truncate text-sm" title={item.vendorModel}>{item.vendorModel || '-'}</span>
+                                                                                <span className="w-16 text-center bg-gray-100 rounded text-sm py-0.5">x {item.quantity}</span>
+                                                                                <span className="flex-1 text-gray-500 ml-1 truncate text-sm" title={item.remark}>{item.remark || '-'}</span>
                                                                             </li>
                                                                         ))}
                                                                     </ul>
