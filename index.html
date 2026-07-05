@@ -5,22 +5,27 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>採購單管理系統</title>
     
+    <!-- Tailwind CSS (樣式) -->
     <script src="https://cdn.tailwindcss.com"></script>
     
+    <!-- FontAwesome (圖示) -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
+    <!-- React & ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     
+    <!-- Babel (讓瀏覽器看得懂 React JSX 語法) -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
+    <!-- Firebase SDK (Compat 舊版寫法，不包含 Storage) -->
     <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-storage-compat.js"></script>
 </head>
 <body class="bg-gray-50 text-gray-800 font-sans">
     
+    <!-- React 應用程式掛載點 -->
     <div id="root"></div>
 
     <script type="text/babel">
@@ -37,13 +42,12 @@
             measurementId: "G-Y9DL3C4X2E"
         };
 
-        // 初始化 Firebase (防止重複初始化)
+        // 初始化 Firebase
         if (!firebase.apps.length) {
             firebase.initializeApp(firebaseConfig);
         }
         const auth = firebase.auth();
         const db = firebase.firestore();
-        const storage = firebase.storage();
 
         function App() {
             // 動態取得當前電腦的本地日期
@@ -68,12 +72,10 @@
             const [dateRange, setDateRange] = useState({ start: '', end: '' });
             const [sortOrder, setSortOrder] = useState('desc'); 
             
-            const [previewPdfUrl, setPreviewPdfUrl] = useState(null);
             const [editingItems, setEditingItems] = useState({ orderId: null, items: [] });
-            
             const [isCustomVendor, setIsCustomVendor] = useState(false);
             
-            // 新增：防呆與儲存狀態提示
+            // 防呆與儲存狀態提示
             const [isSubmitting, setIsSubmitting] = useState(false);
 
             // 權限管理
@@ -90,7 +92,7 @@
             // 新增表單
             const initialFormState = {
                 displayId: '', vendor: '', orderDate: todayStr, deliveryDate: '',
-                items: [{ model: '', vendorModel: '', quantity: 1, unitPrice: '', unitPriceUsd: '', remark: '' }], pdfUrl: null, pdfFile: null
+                items: [{ model: '', vendorModel: '', quantity: 1, unitPrice: '', unitPriceUsd: '', remark: '' }]
             };
             const [formData, setFormData] = useState(initialFormState);
             const [completeData, setCompleteData] = useState({ date: todayStr, remark: '' });
@@ -169,44 +171,15 @@
                 }, 0);
             };
 
-            const handleFileUpload = (e) => {
-                const file = e.target.files[0];
-                if (file && file.type === 'application/pdf') {
-                    if (file.size > 5 * 1024 * 1024) {
-                        alert("檔案太大囉！請上傳 5MB 以下的 PDF。");
-                        return;
-                    }
-                    setFormData({ ...formData, pdfUrl: URL.createObjectURL(file), pdfFile: file });
-                } else if (file) {
-                    alert("請上傳 PDF 格式的檔案！");
-                }
-            };
-
-            // 【完全修正】加上防呆防連點與嚴格的空值清理
             const handleSubmit = async (e) => {
                 e.preventDefault(); 
-                if (isSubmitting) return; // 避免重複點擊
+                if (isSubmitting) return; 
                 
                 setIsSubmitting(true);
                 
                 try {
-                    let finalPdfUrl = '';
-                    
-                    if (formData.pdfFile && isOnline) {
-                        try {
-                            const fileRef = storage.ref(`po_pdfs/${Date.now()}_${formData.pdfFile.name}`);
-                            await fileRef.put(formData.pdfFile);
-                            finalPdfUrl = await fileRef.getDownloadURL();
-                        } catch (pdfError) {
-                            alert("PDF 上傳失敗，請確認 Firebase Storage 權限！\n錯誤訊息：" + pdfError.message);
-                            setIsSubmitting(false);
-                            return; // PDF 上傳失敗就中斷
-                        }
-                    }
-
                     const displayId = (formData.displayId && formData.displayId.trim()) ? formData.displayId.trim() : `PO-${Date.now().toString().slice(-6)}`;
                     
-                    // 嚴格清理：過濾掉空行，並確保沒有 undefined 會被送進 Firebase
                     const itemsToSave = formData.items
                         .filter(item => (item.model && item.model.trim() !== '') || (item.vendorModel && item.vendorModel.trim() !== ''))
                         .map(item => ({ 
@@ -228,7 +201,6 @@
                         status: '處理中', 
                         amount: finalAmount || 0, 
                         items: itemsToSave, 
-                        pdfUrl: finalPdfUrl,
                         createdAt: new Date().toISOString()
                     };
 
@@ -242,7 +214,7 @@
                     console.error("寫入 Firebase 失敗:", error);
                     alert(`儲存失敗！\n詳細錯誤訊息：${error.message}`);
                 } finally {
-                    setIsSubmitting(false); // 成功或失敗都會解除按鈕鎖定
+                    setIsSubmitting(false); 
                 }
             };
 
@@ -557,11 +529,7 @@
                                         )}
                                     </div>
                                     <div><label className="block text-xs text-gray-700">訂單日期</label><input type="date" value={formData.orderDate} onChange={e => setFormData({...formData, orderDate: e.target.value})} className="w-full px-3 py-1.5 border rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" /></div>
-                                    <div><label className="block text-xs font-bold mb-1 text-gray-700">預計交期 (無限制)</label><input type="date" value={formData.deliveryDate} onChange={e => setFormData({...formData, deliveryDate: e.target.value})} className="w-full px-3 py-1.5 border rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" /></div>
-                                    <div className="md:col-span-2">
-                                        <label className="block text-xs text-gray-700 mb-1">夾帶 PDF (上限 5MB)</label>
-                                        <input type="file" accept="application/pdf" onChange={handleFileUpload} className="w-full text-sm file:mr-4 file:py-1.5 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
-                                    </div>
+                                    <div className="md:col-span-3"><label className="block text-xs font-bold mb-1 text-gray-700">預計交期 (無限制)</label><input type="date" value={formData.deliveryDate} onChange={e => setFormData({...formData, deliveryDate: e.target.value})} className="w-full md:w-1/3 px-3 py-1.5 border rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" /></div>
                                 </div>
                                 
                                 <div className="bg-gray-50 p-3 rounded border overflow-x-auto">
@@ -720,11 +688,6 @@
                                                                         <p className="text-xs text-blue-800 font-bold mb-1"><i className="fas fa-lock mr-1"></i>訂單總金額 (內部)</p>
                                                                         <p className="text-2xl font-black text-blue-900">{formatRMB(order.amount)}</p>
                                                                     </div>
-                                                                )}
-                                                                {order.pdfUrl && (
-                                                                    <button onClick={() => setPreviewPdfUrl(order.pdfUrl)} className="w-full bg-white border hover:bg-gray-100 py-2.5 rounded-lg text-sm font-bold flex justify-center items-center shadow-sm">
-                                                                        <i className="fas fa-file-pdf text-red-500 mr-2"></i>查看 PDF 附件
-                                                                    </button>
                                                                 )}
                                                             </div>
                                                         </div>
