@@ -80,14 +80,14 @@
             const [loginForm, setLoginForm] = useState({ username: '', password: '' });
             const [loginError, setLoginError] = useState('');
 
-            // 單價管理狀態
-            const [priceModal, setPriceModal] = useState({ isOpen: false, id: null, model: '', price: '', reason: '' });
+            // 單價管理狀態 (加入 priceUsd)
+            const [priceModal, setPriceModal] = useState({ isOpen: false, id: null, model: '', price: '', priceUsd: '', reason: '' });
             const [historyModal, setHistoryModal] = useState({ isOpen: false, model: '', history: [] });
 
-            // 新增表單 (增加 unitPrice 欄位)
+            // 新增表單 (增加 unitPrice 與 unitPriceUsd 欄位)
             const initialFormState = {
                 displayId: '', vendor: '', orderDate: todayStr, deliveryDate: '',
-                items: [{ model: '', vendorModel: '', quantity: 1, unitPrice: '', remark: '' }], pdfUrl: null, pdfFile: null
+                items: [{ model: '', vendorModel: '', quantity: 1, unitPrice: '', unitPriceUsd: '', remark: '' }], pdfUrl: null, pdfFile: null
             };
             const [formData, setFormData] = useState(initialFormState);
             const [completeData, setCompleteData] = useState({ date: todayStr, remark: '' });
@@ -142,7 +142,7 @@
 
             const handleLogout = () => {
                 setCurrentUser(null);
-                setCurrentView('PO_LIST'); // 登出時退回主畫面
+                setCurrentView('PO_LIST'); 
             };
 
             const getAlertInfo = (dateStr, status) => {
@@ -156,9 +156,11 @@
                 return { text: '正常', color: 'text-green-700', bg: 'bg-green-100' };
             };
 
-            const formatCurrency = (amount) => new Intl.NumberFormat('zh-TW', { style: 'currency', currency: 'TWD', maximumFractionDigits: 0 }).format(amount);
+            // 格式化人民幣與美金
+            const formatRMB = (amount) => new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY', maximumFractionDigits: 2 }).format(amount || 0);
+            const formatUSD = (amount) => amount ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(amount) : '-';
 
-            // 自動計算表單總額 (依照使用者輸入的 unitPrice 計算)
+            // 自動計算表單總額 (依據 RMB 計算)
             const calculateFormTotal = () => {
                 return formData.items.reduce((sum, item) => {
                     const price = Number(item.unitPrice) || 0;
@@ -181,7 +183,7 @@
             };
 
             const handleSubmit = async (e) => {
-                e.preventDefault();
+                e.preventDefault(); // 阻止重新整理頁面
                 
                 let finalPdfUrl = null;
                 if (formData.pdfFile && isOnline) {
@@ -190,7 +192,6 @@
                         await fileRef.put(formData.pdfFile);
                         finalPdfUrl = await fileRef.getDownloadURL();
                     } catch (error) {
-                        // 提示 Firebase 權限問題
                         alert("PDF 上傳雲端失敗！請確認 Firebase Storage 規則是否允許讀寫。");
                         console.error(error);
                         return;
@@ -199,9 +200,13 @@
 
                 const displayId = formData.displayId.trim() ? formData.displayId.trim() : `PO-${Date.now().toString().slice(-6)}`;
                 
-                // 儲存時使用表單內當下的 unitPrice
                 const itemsToSave = formData.items.filter(item => item.model !== '' || item.vendorModel !== '').map(item => {
-                    return { ...item, unitPrice: Number(item.unitPrice) || 0, quantity: Number(item.quantity) || 1 };
+                    return { 
+                        ...item, 
+                        unitPrice: Number(item.unitPrice) || 0, 
+                        unitPriceUsd: Number(item.unitPriceUsd) || null,
+                        quantity: Number(item.quantity) || 1 
+                    };
                 });
                 const finalAmount = itemsToSave.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
                 
@@ -211,7 +216,7 @@
                     orderDate: formData.orderDate || '', 
                     deliveryDate: formData.deliveryDate || '',
                     status: '處理中', 
-                    amount: finalAmount, // 系統自動計算的總額
+                    amount: finalAmount, 
                     items: itemsToSave, 
                     pdfUrl: finalPdfUrl,
                     createdAt: new Date().toISOString()
@@ -243,9 +248,13 @@
             };
 
             const saveEditedItems = async () => {
-                // 編輯細項時重新計算總額
                 const validItems = editingItems.items.filter(item => item.model.trim() !== '' || item.vendorModel?.trim() !== '').map(item => {
-                    return { ...item, unitPrice: Number(item.unitPrice) || 0, quantity: Number(item.quantity) || 1 };
+                    return { 
+                        ...item, 
+                        unitPrice: Number(item.unitPrice) || 0,
+                        unitPriceUsd: Number(item.unitPriceUsd) || null,
+                        quantity: Number(item.quantity) || 1 
+                    };
                 });
                 
                 const newAmount = validItems.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
@@ -264,11 +273,12 @@
             // --- 單價管理邏輯 ---
             const handleSavePrice = async (e) => {
                 e.preventDefault();
-                if(!priceModal.model || !priceModal.price || !priceModal.reason) return alert("請填寫完整資訊與變更原因");
+                if(!priceModal.model || !priceModal.price || !priceModal.reason) return alert("請填寫完整必填資訊與變更原因");
                 
                 const newHistoryEntry = {
                     date: new Date().toISOString(),
                     price: Number(priceModal.price),
+                    priceUsd: priceModal.priceUsd ? Number(priceModal.priceUsd) : null,
                     reason: priceModal.reason
                 };
 
@@ -276,16 +286,18 @@
                     if (priceModal.id) {
                         await db.collection('po_prices').doc(priceModal.id).update({
                             price: Number(priceModal.price),
+                            priceUsd: priceModal.priceUsd ? Number(priceModal.priceUsd) : null,
                             history: firebase.firestore.FieldValue.arrayUnion(newHistoryEntry)
                         });
                     } else {
                         await db.collection('po_prices').add({
                             model: priceModal.model,
                             price: Number(priceModal.price),
+                            priceUsd: priceModal.priceUsd ? Number(priceModal.priceUsd) : null,
                             history: [newHistoryEntry]
                         });
                     }
-                    setPriceModal({ isOpen: false, id: null, model: '', price: '', reason: '' });
+                    setPriceModal({ isOpen: false, id: null, model: '', price: '', priceUsd: '', reason: '' });
                 } catch (error) {
                     console.error(error);
                     alert("單價儲存失敗！");
@@ -326,7 +338,7 @@
                         <div className="bg-white rounded-xl shadow-sm border p-5">
                             <div className="flex justify-between items-center mb-4">
                                 <h2 className="font-bold text-lg">現有型號單價表</h2>
-                                <button onClick={() => setPriceModal({ isOpen: true, id: null, model: '', price: '', reason: '' })} className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm font-medium hover:bg-blue-700">
+                                <button onClick={() => setPriceModal({ isOpen: true, id: null, model: '', price: '', priceUsd: '', reason: '' })} className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm font-medium hover:bg-blue-700">
                                     <i className="fas fa-plus mr-1"></i> 新增機型
                                 </button>
                             </div>
@@ -334,7 +346,8 @@
                                 <thead className="bg-gray-100 text-sm">
                                     <tr>
                                         <th className="p-3">精機型號</th>
-                                        <th className="p-3 text-right">目前單價</th>
+                                        <th className="p-3 text-right">目前單價 (RMB)</th>
+                                        <th className="p-3 text-right border-l">單價 (USD)</th>
                                         <th className="p-3 text-center">操作</th>
                                     </tr>
                                 </thead>
@@ -342,14 +355,15 @@
                                     {prices.map(p => (
                                         <tr key={p.id} className="hover:bg-gray-50">
                                             <td className="p-3 font-bold">{p.model}</td>
-                                            <td className="p-3 text-right font-medium text-blue-700">{formatCurrency(p.price)}</td>
+                                            <td className="p-3 text-right font-medium text-blue-700">{formatRMB(p.price)}</td>
+                                            <td className="p-3 text-right text-gray-600 border-l">{formatUSD(p.priceUsd)}</td>
                                             <td className="p-3 text-center">
-                                                <button onClick={() => setPriceModal({ isOpen: true, id: p.id, model: p.model, price: p.price, reason: '' })} className="text-blue-600 hover:text-blue-800 mx-2" title="修改價格"><i className="fas fa-edit"></i> 修改</button>
+                                                <button onClick={() => setPriceModal({ isOpen: true, id: p.id, model: p.model, price: p.price, priceUsd: p.priceUsd || '', reason: '' })} className="text-blue-600 hover:text-blue-800 mx-2" title="修改價格"><i className="fas fa-edit"></i> 修改</button>
                                                 <button onClick={() => setHistoryModal({ isOpen: true, model: p.model, history: p.history || [] })} className="text-gray-500 hover:text-gray-800 mx-2" title="歷史紀錄"><i className="fas fa-history"></i> 紀錄</button>
                                             </td>
                                         </tr>
                                     ))}
-                                    {prices.length === 0 && <tr><td colSpan="3" className="p-5 text-center text-gray-500">尚無單價資料，請點擊右上方新增。</td></tr>}
+                                    {prices.length === 0 && <tr><td colSpan="4" className="p-5 text-center text-gray-500">尚無單價資料，請點擊右上方新增。</td></tr>}
                                 </tbody>
                             </table>
                         </div>
@@ -364,16 +378,22 @@
                                             <label className="block text-xs font-bold mb-1">精機型號</label>
                                             <input type="text" value={priceModal.model} disabled={!!priceModal.id} onChange={e => setPriceModal({...priceModal, model: e.target.value})} className="w-full border p-2 rounded text-sm disabled:bg-gray-100" required />
                                         </div>
-                                        <div>
-                                            <label className="block text-xs font-bold mb-1">單價 (NT$)</label>
-                                            <input type="number" value={priceModal.price} onChange={e => setPriceModal({...priceModal, price: e.target.value})} className="w-full border p-2 rounded text-sm" required min="0" />
+                                        <div className="flex gap-3">
+                                            <div className="flex-1">
+                                                <label className="block text-xs font-bold mb-1 text-blue-800">單價 (RMB) <span className="text-red-500">*必填</span></label>
+                                                <input type="number" step="0.01" value={priceModal.price} onChange={e => setPriceModal({...priceModal, price: e.target.value})} className="w-full border p-2 rounded text-sm" required min="0" />
+                                            </div>
+                                            <div className="flex-1">
+                                                <label className="block text-xs font-bold mb-1 text-gray-700">單價 (USD) <span className="text-gray-400 font-normal">選填</span></label>
+                                                <input type="number" step="0.01" value={priceModal.priceUsd} onChange={e => setPriceModal({...priceModal, priceUsd: e.target.value})} className="w-full border p-2 rounded text-sm" min="0" placeholder="留白表示無" />
+                                            </div>
                                         </div>
                                         <div>
                                             <label className="block text-xs font-bold mb-1 text-red-600">本次異動原因 (必填)</label>
-                                            <input type="text" value={priceModal.reason} placeholder="例如：2026年年度調漲、新增品項..." onChange={e => setPriceModal({...priceModal, reason: e.target.value})} className="w-full border border-red-200 focus:border-red-500 p-2 rounded text-sm outline-none" required />
+                                            <input type="text" value={priceModal.reason} placeholder="例如：年度調漲、新增品項..." onChange={e => setPriceModal({...priceModal, reason: e.target.value})} className="w-full border border-red-200 focus:border-red-500 p-2 rounded text-sm outline-none" required />
                                         </div>
                                         <div className="flex gap-2 mt-4">
-                                            <button type="button" onClick={() => setPriceModal({isOpen: false, id: null, model: '', price: '', reason: ''})} className="flex-1 py-2 bg-gray-100 rounded text-sm">取消</button>
+                                            <button type="button" onClick={() => setPriceModal({isOpen: false, id: null, model: '', price: '', priceUsd: '', reason: ''})} className="flex-1 py-2 bg-gray-100 rounded text-sm">取消</button>
                                             <button type="submit" className="flex-1 py-2 bg-blue-600 text-white rounded text-sm font-bold">儲存並記錄</button>
                                         </div>
                                     </form>
@@ -393,10 +413,13 @@
                                         {[...historyModal.history].reverse().map((record, i) => (
                                             <li key={i} className="bg-gray-50 border p-3 rounded text-sm">
                                                 <div className="flex justify-between mb-1">
-                                                    <span className="font-bold text-blue-700">{formatCurrency(record.price)}</span>
+                                                    <div>
+                                                        <span className="font-bold text-blue-700 mr-3">{formatRMB(record.price)}</span>
+                                                        <span className="text-gray-500">{formatUSD(record.priceUsd)}</span>
+                                                    </div>
                                                     <span className="text-xs text-gray-500"><i className="far fa-clock mr-1"></i>{new Date(record.date).toLocaleString()}</span>
                                                 </div>
-                                                <p className="text-gray-600 text-xs">原因：{record.reason}</p>
+                                                <p className="text-gray-600 text-xs mt-1">原因：{record.reason}</p>
                                             </li>
                                         ))}
                                     </ul>
@@ -477,7 +500,7 @@
                         {isAdmin && (
                             <div className="px-4 py-2 min-w-[130px] bg-white rounded-lg border shadow-sm">
                                 <p className="text-xs text-gray-500 font-medium">總金額 (內部顯示)</p>
-                                <p className="text-lg font-bold text-gray-900">{formatCurrency(totalAmount)}</p>
+                                <p className="text-lg font-bold text-gray-900">{formatRMB(totalAmount)}</p>
                             </div>
                         )}
 
@@ -505,15 +528,16 @@
                                 <h2 className="font-bold text-blue-900"><i className="fas fa-plus mr-2"></i>填寫採購單</h2>
                                 {isAdmin && (
                                     <span className="text-xs font-bold text-green-700 bg-green-100 px-2 py-1 rounded">
-                                        自動加總: {formatCurrency(calculateFormTotal())}
+                                        自動加總: {formatRMB(calculateFormTotal())}
                                     </span>
                                 )}
                             </div>
-                            <form onSubmit={handleSubmit} className="space-y-4">
+                            {/* 加入 noValidate 關閉瀏覽器原生阻擋 */}
+                            <form onSubmit={handleSubmit} noValidate className="space-y-4">
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                                     <div><label className="block text-xs text-gray-700">訂單編號</label><input type="text" value={formData.displayId} onChange={e => setFormData({...formData, displayId: e.target.value})} placeholder="留空由系統自動產生" className="w-full px-3 py-1.5 border rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" /></div>
                                     <div>
-                                        <label className="block text-xs font-bold mb-1 text-gray-700">供應商 (無限制必填)</label>
+                                        <label className="block text-xs font-bold mb-1 text-gray-700">供應商 (無限制)</label>
                                         {isCustomVendor ? (
                                             <div className="flex items-center gap-1">
                                                 <input type="text" value={formData.vendor} onChange={e => setFormData({...formData, vendor: e.target.value})} placeholder="輸入新廠家名稱..." className="w-full px-3 py-1.5 border rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" autoFocus />
@@ -531,41 +555,44 @@
                                         )}
                                     </div>
                                     <div><label className="block text-xs text-gray-700">訂單日期</label><input type="date" value={formData.orderDate} onChange={e => setFormData({...formData, orderDate: e.target.value})} className="w-full px-3 py-1.5 border rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" /></div>
-                                    <div><label className="block text-xs font-bold mb-1 text-gray-700">預計交期 (無限制必填)</label><input type="date" value={formData.deliveryDate} onChange={e => setFormData({...formData, deliveryDate: e.target.value})} className="w-full px-3 py-1.5 border rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" /></div>
+                                    <div><label className="block text-xs font-bold mb-1 text-gray-700">預計交期 (無限制)</label><input type="date" value={formData.deliveryDate} onChange={e => setFormData({...formData, deliveryDate: e.target.value})} className="w-full px-3 py-1.5 border rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" /></div>
                                     <div className="md:col-span-2">
                                         <label className="block text-xs text-gray-700 mb-1">夾帶 PDF (上限 5MB)</label>
                                         <input type="file" accept="application/pdf" onChange={handleFileUpload} className="w-full text-sm file:mr-4 file:py-1.5 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
                                     </div>
                                 </div>
                                 
-                                <div className="bg-gray-50 p-3 rounded border">
+                                <div className="bg-gray-50 p-3 rounded border overflow-x-auto">
                                     <div className="flex justify-between items-center mb-2">
-                                        <h3 className="text-xs font-bold text-gray-800">採購細項</h3>
-                                        <button type="button" onClick={() => setFormData({...formData, items: [...formData.items, {model:'', vendorModel:'', quantity:1, unitPrice:'', remark:''}]})} className="text-xs text-blue-600 font-bold bg-blue-100 px-2 py-1 rounded hover:bg-blue-200"><i className="fas fa-plus mr-1"></i>新增一列</button>
+                                        <h3 className="text-xs font-bold text-gray-800">採購細項 (單價將自動帶入最新的)</h3>
+                                        <button type="button" onClick={() => setFormData({...formData, items: [...formData.items, {model:'', vendorModel:'', quantity:1, unitPrice:'', unitPriceUsd:'', remark:''}]})} className="text-xs text-blue-600 font-bold bg-blue-100 px-2 py-1 rounded hover:bg-blue-200 whitespace-nowrap"><i className="fas fa-plus mr-1"></i>新增一列</button>
                                     </div>
                                     {formData.items.map((item, index) => {
                                         return (
-                                            <div key={index} className="flex gap-2 mb-2 items-center flex-wrap sm:flex-nowrap">
+                                            <div key={index} className="flex gap-2 mb-2 items-center flex-wrap sm:flex-nowrap min-w-max sm:min-w-0">
                                                 <input type="text" list="price-models" placeholder="精機型號 (可快選)" value={item.model} 
                                                     onChange={e => {
                                                         const val = e.target.value;
                                                         const n = [...formData.items]; 
                                                         n[index].model = val; 
-                                                        // 自動帶入價格邏輯
+                                                        // 自動帶入價格邏輯 (檢查單價管理裡面是否有修改)
                                                         const priceObj = prices.find(p => p.model === val.trim());
-                                                        if (priceObj) n[index].unitPrice = priceObj.price;
+                                                        if (priceObj) {
+                                                            n[index].unitPrice = priceObj.price;
+                                                            n[index].unitPriceUsd = priceObj.priceUsd || '';
+                                                        }
                                                         setFormData({...formData, items: n});
                                                     }} 
-                                                    className="w-full sm:w-1/4 px-2 py-1.5 text-sm border rounded outline-none focus:ring-1 focus:ring-blue-500" />
+                                                    className="w-40 sm:w-1/4 px-2 py-1.5 text-sm border rounded outline-none focus:ring-1 focus:ring-blue-500" />
                                                 
-                                                <input type="text" placeholder="廠商型號" value={item.vendorModel} onChange={e => {const n=[...formData.items]; n[index].vendorModel=e.target.value; setFormData({...formData, items: n})}} className="w-full sm:w-1/4 px-2 py-1.5 text-sm border rounded outline-none focus:ring-1 focus:ring-blue-500" />
+                                                <input type="text" placeholder="廠商型號" value={item.vendorModel} onChange={e => {const n=[...formData.items]; n[index].vendorModel=e.target.value; setFormData({...formData, items: n})}} className="w-32 sm:w-1/4 px-2 py-1.5 text-sm border rounded outline-none focus:ring-1 focus:ring-blue-500" />
                                                 
-                                                <input type="number" placeholder="數量" value={item.quantity} onChange={e => {const n=[...formData.items]; n[index].quantity=e.target.value; setFormData({...formData, items: n})}} className="w-16 px-2 py-1.5 text-sm border rounded text-center outline-none focus:ring-1 focus:ring-blue-500" min="1" />
+                                                <input type="number" placeholder="數量" value={item.quantity} onChange={e => {const n=[...formData.items]; n[index].quantity=e.target.value; setFormData({...formData, items: n})}} className="w-16 px-2 py-1.5 text-sm border rounded text-center outline-none focus:ring-1 focus:ring-blue-500" />
                                                 
-                                                {/* 開放手動輸入單價，且帶入時會自動更新這裡 */}
-                                                <input type="number" placeholder="單價" value={item.unitPrice} onChange={e => {const n=[...formData.items]; n[index].unitPrice=e.target.value; setFormData({...formData, items: n})}} className="w-20 px-2 py-1.5 text-sm border rounded text-center outline-none focus:ring-1 focus:ring-blue-500" min="0" />
+                                                <input type="number" step="0.01" placeholder="RMB" title="人民幣單價" value={item.unitPrice} onChange={e => {const n=[...formData.items]; n[index].unitPrice=e.target.value; setFormData({...formData, items: n})}} className="w-20 px-2 py-1.5 text-sm border rounded text-center outline-none focus:ring-1 focus:ring-blue-500" />
+                                                <input type="number" step="0.01" placeholder="USD" title="美金單價" value={item.unitPriceUsd} onChange={e => {const n=[...formData.items]; n[index].unitPriceUsd=e.target.value; setFormData({...formData, items: n})}} className="w-20 px-2 py-1.5 text-sm border rounded text-center outline-none focus:ring-1 focus:ring-blue-500" />
                                                 
-                                                <input type="text" placeholder="備註" value={item.remark} onChange={e => {const n=[...formData.items]; n[index].remark=e.target.value; setFormData({...formData, items: n})}} className="flex-1 px-2 py-1.5 text-sm border rounded outline-none focus:ring-1 focus:ring-blue-500" />
+                                                <input type="text" placeholder="備註" value={item.remark} onChange={e => {const n=[...formData.items]; n[index].remark=e.target.value; setFormData({...formData, items: n})}} className="flex-1 min-w-[80px] px-2 py-1.5 text-sm border rounded outline-none focus:ring-1 focus:ring-blue-500" />
                                                 
                                                 <button type="button" onClick={() => setFormData({...formData, items: formData.items.filter((_,i)=>i!==index)})} disabled={formData.items.length===1} className="text-gray-400 hover:text-red-500 p-1 disabled:opacity-30"><i className="fas fa-trash-alt"></i></button>
                                             </div>
@@ -622,9 +649,9 @@
                                                 <tr className="bg-gray-50 border-b-2">
                                                     <td colSpan="8" className="p-0">
                                                         <div className="p-6 flex flex-col md:flex-row gap-6 shadow-inner">
-                                                            <div className="flex-1">
-                                                                <div className="flex justify-between mb-3 border-b pb-2">
-                                                                    <h4 className="font-bold">採購明細</h4>
+                                                            <div className="flex-1 overflow-x-auto">
+                                                                <div className="flex justify-between items-center mb-3 border-b pb-2">
+                                                                    <h4 className="font-bold">採購明細 (紀錄儲存當時的價格)</h4>
                                                                     {isAdmin && (
                                                                         editingItems.orderId === order.dbId ? (
                                                                             <div className="flex gap-2">
@@ -639,24 +666,28 @@
                                                                 {editingItems.orderId === order.dbId ? (
                                                                     <div className="space-y-2">
                                                                         {editingItems.items.map((item, idx) => (
-                                                                            <div key={idx} className="flex gap-2 items-center flex-wrap sm:flex-nowrap">
-                                                                                <input className="border p-1 text-sm w-full sm:w-1/4 rounded outline-none focus:ring-1 focus:ring-blue-500" list="price-models" placeholder="精機型號" value={item.model} 
+                                                                            <div key={idx} className="flex gap-2 items-center flex-wrap sm:flex-nowrap min-w-max sm:min-w-0">
+                                                                                <input className="border p-1 text-sm w-40 sm:w-1/4 rounded outline-none focus:ring-1 focus:ring-blue-500" list="price-models" placeholder="精機型號" value={item.model} 
                                                                                     onChange={e=>{
                                                                                         const val = e.target.value;
                                                                                         const n=[...editingItems.items]; 
                                                                                         n[idx].model=val; 
                                                                                         const priceObj = prices.find(p => p.model === val.trim());
-                                                                                        if (priceObj) n[idx].unitPrice = priceObj.price;
+                                                                                        if (priceObj) {
+                                                                                            n[idx].unitPrice = priceObj.price;
+                                                                                            n[idx].unitPriceUsd = priceObj.priceUsd || '';
+                                                                                        }
                                                                                         setEditingItems({...editingItems,items:n});
                                                                                     }}/>
-                                                                                <input className="border p-1 text-sm w-full sm:w-1/4 rounded outline-none focus:ring-1 focus:ring-blue-500" placeholder="廠商型號" value={item.vendorModel || ''} onChange={e=>{const n=[...editingItems.items]; n[idx].vendorModel=e.target.value; setEditingItems({...editingItems,items:n})}}/>
+                                                                                <input className="border p-1 text-sm w-32 sm:w-1/4 rounded outline-none focus:ring-1 focus:ring-blue-500" placeholder="廠商型號" value={item.vendorModel || ''} onChange={e=>{const n=[...editingItems.items]; n[idx].vendorModel=e.target.value; setEditingItems({...editingItems,items:n})}}/>
                                                                                 <input type="number" className="border p-1 text-sm w-16 rounded text-center outline-none focus:ring-1 focus:ring-blue-500" placeholder="數量" value={item.quantity} onChange={e=>{const n=[...editingItems.items]; n[idx].quantity=e.target.value; setEditingItems({...editingItems,items:n})}}/>
-                                                                                <input type="number" className="border p-1 text-sm w-20 rounded text-center outline-none focus:ring-1 focus:ring-blue-500" placeholder="單價" value={item.unitPrice} onChange={e=>{const n=[...editingItems.items]; n[idx].unitPrice=e.target.value; setEditingItems({...editingItems,items:n})}}/>
-                                                                                <input className="border p-1 text-sm flex-1 rounded outline-none focus:ring-1 focus:ring-blue-500" placeholder="備註" value={item.remark} onChange={e=>{const n=[...editingItems.items]; n[idx].remark=e.target.value; setEditingItems({...editingItems,items:n})}}/>
+                                                                                <input type="number" step="0.01" className="border p-1 text-sm w-20 rounded text-center outline-none focus:ring-1 focus:ring-blue-500" placeholder="RMB" value={item.unitPrice} onChange={e=>{const n=[...editingItems.items]; n[idx].unitPrice=e.target.value; setEditingItems({...editingItems,items:n})}}/>
+                                                                                <input type="number" step="0.01" className="border p-1 text-sm w-20 rounded text-center outline-none focus:ring-1 focus:ring-blue-500" placeholder="USD" value={item.unitPriceUsd || ''} onChange={e=>{const n=[...editingItems.items]; n[idx].unitPriceUsd=e.target.value; setEditingItems({...editingItems,items:n})}}/>
+                                                                                <input className="border p-1 text-sm flex-1 min-w-[80px] rounded outline-none focus:ring-1 focus:ring-blue-500" placeholder="備註" value={item.remark} onChange={e=>{const n=[...editingItems.items]; n[idx].remark=e.target.value; setEditingItems({...editingItems,items:n})}}/>
                                                                                 <button onClick={()=>{const n=editingItems.items.filter((_,i)=>i!==idx); setEditingItems({...editingItems,items:n})}} className="text-gray-400 hover:text-red-500 p-1"><i className="fas fa-trash-alt"></i></button>
                                                                             </div>
                                                                         ))}
-                                                                        <button onClick={() => setEditingItems({...editingItems, items: [...editingItems.items, {model:'', vendorModel:'', quantity:1, unitPrice:'', remark:''}]})} className="text-xs text-blue-600 font-bold bg-blue-100 px-2 py-1 rounded hover:bg-blue-200 mt-2"><i className="fas fa-plus mr-1"></i>新增一列</button>
+                                                                        <button onClick={() => setEditingItems({...editingItems, items: [...editingItems.items, {model:'', vendorModel:'', quantity:1, unitPrice:'', unitPriceUsd:'', remark:''}]})} className="text-xs text-blue-600 font-bold bg-blue-100 px-2 py-1 rounded hover:bg-blue-200 mt-2"><i className="fas fa-plus mr-1"></i>新增一列</button>
                                                                     </div>
                                                                 ) : (
                                                                     <ul className="space-y-2">
@@ -666,9 +697,10 @@
                                                                                 <span className="text-gray-600 w-1/4 truncate text-sm" title={item.vendorModel}>{item.vendorModel || '-'}</span>
                                                                                 <span className="w-16 text-center bg-gray-100 rounded text-sm py-0.5 font-bold text-gray-700">x {item.quantity}</span>
                                                                                 {isAdmin && (
-                                                                                    <span className="w-24 text-right text-blue-700 text-xs font-bold border-l pl-2">
-                                                                                        單價 {formatCurrency(item.unitPrice || 0)}
-                                                                                    </span>
+                                                                                    <div className="flex flex-col text-right w-24 border-l pl-2 leading-tight">
+                                                                                        <span className="text-blue-700 text-xs font-bold">{formatRMB(item.unitPrice || 0)}</span>
+                                                                                        {item.unitPriceUsd && <span className="text-gray-500 text-[10px]">{formatUSD(item.unitPriceUsd)}</span>}
+                                                                                    </div>
                                                                                 )}
                                                                                 <span className="flex-1 text-gray-500 ml-2 truncate text-sm" title={item.remark}>{item.remark || '-'}</span>
                                                                             </li>
@@ -682,7 +714,7 @@
                                                                 {isAdmin && (
                                                                     <div className="bg-blue-50 p-4 border border-blue-200 rounded-lg text-center shadow-sm">
                                                                         <p className="text-xs text-blue-800 font-bold mb-1"><i className="fas fa-lock mr-1"></i>訂單總金額 (內部)</p>
-                                                                        <p className="text-2xl font-black text-blue-900">{formatCurrency(order.amount)}</p>
+                                                                        <p className="text-2xl font-black text-blue-900">{formatRMB(order.amount)}</p>
                                                                     </div>
                                                                 )}
                                                                 {order.pdfUrl && (
