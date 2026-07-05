@@ -539,31 +539,35 @@
                                     </div>
                                     {formData.items.map((item, index) => {
                                         return (
-                                            <div key={index} className="flex gap-2 mb-2 items-center flex-wrap sm:flex-nowrap min-w-max sm:min-w-0">
-                                                <input type="text" list="price-models" placeholder="精機型號 (可快選)" value={item.model} 
-                                                    onChange={e => {
-                                                        const val = e.target.value;
-                                                        const n = [...formData.items]; 
-                                                        n[index].model = val; 
-                                                        const priceObj = prices.find(p => p.model === val.trim());
-                                                        if (priceObj) {
-                                                            n[index].unitPrice = priceObj.price;
-                                                            n[index].unitPriceUsd = priceObj.priceUsd || '';
-                                                        }
-                                                        setFormData({...formData, items: n});
-                                                    }} 
-                                                    className="w-40 sm:w-1/4 px-2 py-1.5 text-sm border rounded outline-none focus:ring-1 focus:ring-blue-500" />
+                                            <div key={index} className="flex gap-2 mb-2 items-start flex-wrap sm:flex-nowrap min-w-max sm:min-w-0 pb-2 border-b sm:border-0 last:border-0">
+                                                {/* 精機型號與價格群組 */}
+                                                <div className="flex flex-col gap-1 w-full sm:w-48 shrink-0">
+                                                    <input type="text" list="price-models" placeholder="精機型號 (可快選)" value={item.model} 
+                                                        onChange={e => {
+                                                            const val = e.target.value;
+                                                            const n = [...formData.items]; 
+                                                            n[index].model = val; 
+                                                            const priceObj = prices.find(p => p.model === val.trim());
+                                                            if (priceObj) {
+                                                                n[index].unitPrice = priceObj.price;
+                                                                n[index].unitPriceUsd = priceObj.priceUsd || '';
+                                                            }
+                                                            setFormData({...formData, items: n});
+                                                        }} 
+                                                        className="w-full px-2 py-1.5 text-sm border rounded outline-none focus:ring-1 focus:ring-blue-500" />
+                                                    <div className="flex gap-1">
+                                                        <input type="number" step="0.01" placeholder="RMB" title="人民幣單價" value={item.unitPrice} onChange={e => {const n=[...formData.items]; n[index].unitPrice=e.target.value; setFormData({...formData, items: n})}} className="w-1/2 px-2 py-1 text-xs border rounded text-center outline-none focus:ring-1 focus:ring-blue-500 bg-white" />
+                                                        <input type="number" step="0.01" placeholder="USD" title="美金單價" value={item.unitPriceUsd} onChange={e => {const n=[...formData.items]; n[index].unitPriceUsd=e.target.value; setFormData({...formData, items: n})}} className="w-1/2 px-2 py-1 text-xs border rounded text-center outline-none focus:ring-1 focus:ring-blue-500 bg-white" />
+                                                    </div>
+                                                </div>
                                                 
-                                                <input type="text" placeholder="廠商型號" value={item.vendorModel} onChange={e => {const n=[...formData.items]; n[index].vendorModel=e.target.value; setFormData({...formData, items: n})}} className="w-32 sm:w-1/4 px-2 py-1.5 text-sm border rounded outline-none focus:ring-1 focus:ring-blue-500" />
+                                                <input type="text" placeholder="廠商型號" value={item.vendorModel} onChange={e => {const n=[...formData.items]; n[index].vendorModel=e.target.value; setFormData({...formData, items: n})}} className="w-full sm:w-32 px-2 py-1.5 text-sm border rounded outline-none focus:ring-1 focus:ring-blue-500 shrink-0" />
                                                 
-                                                <input type="number" placeholder="數量" value={item.quantity} onChange={e => {const n=[...formData.items]; n[index].quantity=e.target.value; setFormData({...formData, items: n})}} className="w-16 px-2 py-1.5 text-sm border rounded text-center outline-none focus:ring-1 focus:ring-blue-500" />
+                                                <input type="number" placeholder="數量" value={item.quantity} onChange={e => {const n=[...formData.items]; n[index].quantity=e.target.value; setFormData({...formData, items: n})}} className="w-14 px-2 py-1.5 text-sm border rounded text-center outline-none focus:ring-1 focus:ring-blue-500 shrink-0" />
                                                 
-                                                <input type="number" step="0.01" placeholder="RMB" title="人民幣單價" value={item.unitPrice} onChange={e => {const n=[...formData.items]; n[index].unitPrice=e.target.value; setFormData({...formData, items: n})}} className="w-20 px-2 py-1.5 text-sm border rounded text-center outline-none focus:ring-1 focus:ring-blue-500" />
-                                                <input type="number" step="0.01" placeholder="USD" title="美金單價" value={item.unitPriceUsd} onChange={e => {const n=[...formData.items]; n[index].unitPriceUsd=e.target.value; setFormData({...formData, items: n})}} className="w-20 px-2 py-1.5 text-sm border rounded text-center outline-none focus:ring-1 focus:ring-blue-500" />
+                                                <input type="text" placeholder="備註" value={item.remark} onChange={e => {const n=[...formData.items]; n[index].remark=e.target.value; setFormData({...formData, items: n})}} className="flex-1 min-w-[80px] w-full px-2 py-1.5 text-sm border rounded outline-none focus:ring-1 focus:ring-blue-500" />
                                                 
-                                                <input type="text" placeholder="備註" value={item.remark} onChange={e => {const n=[...formData.items]; n[index].remark=e.target.value; setFormData({...formData, items: n})}} className="flex-1 min-w-[80px] px-2 py-1.5 text-sm border rounded outline-none focus:ring-1 focus:ring-blue-500" />
-                                                
-                                                <button type="button" onClick={() => setFormData({...formData, items: formData.items.filter((_,i)=>i!==index)})} disabled={formData.items.length===1} className="text-gray-400 hover:text-red-500 p-1 disabled:opacity-30"><i className="fas fa-trash-alt"></i></button>
+                                                <button type="button" onClick={() => setFormData({...formData, items: formData.items.filter((_,i)=>i!==index)})} disabled={formData.items.length===1} className="text-gray-400 hover:text-red-500 p-1 mt-1 disabled:opacity-30 shrink-0"><i className="fas fa-trash-alt"></i></button>
                                             </div>
                                         )
                                     })}
@@ -589,7 +593,6 @@
                                     <th className="px-5 py-3">交期</th>
                                     <th className="px-5 py-3">狀態</th>
                                     <th className="px-5 py-3">警示</th>
-                                    <th className="px-5 py-3 text-center">雲端</th>
                                     <th className="px-5 py-3 text-center">詳情</th>
                                 </tr>
                             </thead>
@@ -605,7 +608,7 @@
                                     return (
                                         <React.Fragment key={order.dbId}>
                                             {showMonthDivider && (
-                                                <tr className="bg-blue-50/50 border-y border-blue-100"><td colSpan="8" className="px-5 py-1.5 text-xs font-bold text-blue-800">{orderMonth}</td></tr>
+                                                <tr className="bg-blue-50/50 border-y border-blue-100"><td colSpan="7" className="px-5 py-1.5 text-xs font-bold text-blue-800">{orderMonth}</td></tr>
                                             )}
                                             <tr onClick={() => setExpandedOrderId(isExpanded ? null : order.dbId)} className={`hover:bg-gray-50 cursor-pointer ${isExpanded ? 'bg-blue-50/20' : ''}`}>
                                                 <td className="px-5 py-3 font-bold">{order.displayId}</td>
@@ -614,13 +617,12 @@
                                                 <td className="px-5 py-3 font-bold">{order.deliveryDate || '-'}</td>
                                                 <td className="px-5 py-3"><span className={`px-2 py-0.5 rounded-full text-xs font-bold ${order.status==='已收貨'?'bg-gray-200':'bg-blue-100 text-blue-700'}`}>{order.status}</span></td>
                                                 <td className="px-5 py-3"><span className={`px-2 py-0.5 rounded text-xs font-bold ${alert.bg} ${alert.color}`}>{alert.text}</span></td>
-                                                <td className="px-5 py-3 text-center text-green-500"><i className="fas fa-check-circle"></i></td>
                                                 <td className="px-5 py-3 text-center text-gray-400"><i className={`fas fa-chevron-${isExpanded?'up':'down'}`}></i></td>
                                             </tr>
 
                                             {isExpanded && (
                                                 <tr className="bg-gray-50 border-b-2">
-                                                    <td colSpan="8" className="p-0">
+                                                    <td colSpan="7" className="p-0">
                                                         <div className="p-6 flex flex-col md:flex-row gap-6 shadow-inner">
                                                             <div className="flex-1 overflow-x-auto">
                                                                 <div className="flex justify-between items-center mb-3 border-b pb-2">
@@ -639,25 +641,30 @@
                                                                 {editingItems.orderId === order.dbId ? (
                                                                     <div className="space-y-2">
                                                                         {editingItems.items.map((item, idx) => (
-                                                                            <div key={idx} className="flex gap-2 items-center flex-wrap sm:flex-nowrap min-w-max sm:min-w-0">
-                                                                                <input className="border p-1 text-sm w-40 sm:w-1/4 rounded outline-none focus:ring-1 focus:ring-blue-500" list="price-models" placeholder="精機型號" value={item.model} 
-                                                                                    onChange={e=>{
-                                                                                        const val = e.target.value;
-                                                                                        const n=[...editingItems.items]; 
-                                                                                        n[idx].model=val; 
-                                                                                        const priceObj = prices.find(p => p.model === val.trim());
-                                                                                        if (priceObj) {
-                                                                                            n[idx].unitPrice = priceObj.price;
-                                                                                            n[idx].unitPriceUsd = priceObj.priceUsd || '';
-                                                                                        }
-                                                                                        setEditingItems({...editingItems,items:n});
-                                                                                    }}/>
-                                                                                <input className="border p-1 text-sm w-32 sm:w-1/4 rounded outline-none focus:ring-1 focus:ring-blue-500" placeholder="廠商型號" value={item.vendorModel || ''} onChange={e=>{const n=[...editingItems.items]; n[idx].vendorModel=e.target.value; setEditingItems({...editingItems,items:n})}}/>
-                                                                                <input type="number" className="border p-1 text-sm w-16 rounded text-center outline-none focus:ring-1 focus:ring-blue-500" placeholder="數量" value={item.quantity} onChange={e=>{const n=[...editingItems.items]; n[idx].quantity=e.target.value; setEditingItems({...editingItems,items:n})}}/>
-                                                                                <input type="number" step="0.01" className="border p-1 text-sm w-20 rounded text-center outline-none focus:ring-1 focus:ring-blue-500" placeholder="RMB" value={item.unitPrice} onChange={e=>{const n=[...editingItems.items]; n[idx].unitPrice=e.target.value; setEditingItems({...editingItems,items:n})}}/>
-                                                                                <input type="number" step="0.01" className="border p-1 text-sm w-20 rounded text-center outline-none focus:ring-1 focus:ring-blue-500" placeholder="USD" value={item.unitPriceUsd || ''} onChange={e=>{const n=[...editingItems.items]; n[idx].unitPriceUsd=e.target.value; setEditingItems({...editingItems,items:n})}}/>
-                                                                                <input className="border p-1 text-sm flex-1 min-w-[80px] rounded outline-none focus:ring-1 focus:ring-blue-500" placeholder="備註" value={item.remark} onChange={e=>{const n=[...editingItems.items]; n[idx].remark=e.target.value; setEditingItems({...editingItems,items:n})}}/>
-                                                                                <button onClick={()=>{const n=editingItems.items.filter((_,i)=>i!==idx); setEditingItems({...editingItems,items:n})}} className="text-gray-400 hover:text-red-500 p-1"><i className="fas fa-trash-alt"></i></button>
+                                                                            <div key={idx} className="flex gap-2 mb-2 items-start flex-wrap sm:flex-nowrap min-w-max sm:min-w-0 pb-2 border-b sm:border-0 last:border-0">
+                                                                                {/* 編輯狀態：精機型號與價格群組 */}
+                                                                                <div className="flex flex-col gap-1 w-full sm:w-48 shrink-0">
+                                                                                    <input className="border p-1.5 text-sm w-full rounded outline-none focus:ring-1 focus:ring-blue-500" list="price-models" placeholder="精機型號" value={item.model} 
+                                                                                        onChange={e=>{
+                                                                                            const val = e.target.value;
+                                                                                            const n=[...editingItems.items]; 
+                                                                                            n[idx].model=val; 
+                                                                                            const priceObj = prices.find(p => p.model === val.trim());
+                                                                                            if (priceObj) {
+                                                                                                n[idx].unitPrice = priceObj.price;
+                                                                                                n[idx].unitPriceUsd = priceObj.priceUsd || '';
+                                                                                            }
+                                                                                            setEditingItems({...editingItems,items:n});
+                                                                                        }}/>
+                                                                                    <div className="flex gap-1">
+                                                                                        <input type="number" step="0.01" className="border p-1 text-xs w-1/2 rounded text-center outline-none focus:ring-1 focus:ring-blue-500 bg-white" placeholder="RMB" value={item.unitPrice} onChange={e=>{const n=[...editingItems.items]; n[idx].unitPrice=e.target.value; setEditingItems({...editingItems,items:n})}}/>
+                                                                                        <input type="number" step="0.01" className="border p-1 text-xs w-1/2 rounded text-center outline-none focus:ring-1 focus:ring-blue-500 bg-white" placeholder="USD" value={item.unitPriceUsd || ''} onChange={e=>{const n=[...editingItems.items]; n[idx].unitPriceUsd=e.target.value; setEditingItems({...editingItems,items:n})}}/>
+                                                                                    </div>
+                                                                                </div>
+                                                                                <input className="border p-1.5 text-sm w-full sm:w-32 rounded outline-none focus:ring-1 focus:ring-blue-500 shrink-0" placeholder="廠商型號" value={item.vendorModel || ''} onChange={e=>{const n=[...editingItems.items]; n[idx].vendorModel=e.target.value; setEditingItems({...editingItems,items:n})}}/>
+                                                                                <input type="number" className="border p-1.5 text-sm w-14 rounded text-center outline-none focus:ring-1 focus:ring-blue-500 shrink-0" placeholder="數量" value={item.quantity} onChange={e=>{const n=[...editingItems.items]; n[idx].quantity=e.target.value; setEditingItems({...editingItems,items:n})}}/>
+                                                                                <input className="border p-1.5 text-sm flex-1 min-w-[80px] w-full rounded outline-none focus:ring-1 focus:ring-blue-500" placeholder="備註" value={item.remark} onChange={e=>{const n=[...editingItems.items]; n[idx].remark=e.target.value; setEditingItems({...editingItems,items:n})}}/>
+                                                                                <button onClick={()=>{const n=editingItems.items.filter((_,i)=>i!==idx); setEditingItems({...editingItems,items:n})}} className="text-gray-400 hover:text-red-500 p-1 mt-1 shrink-0"><i className="fas fa-trash-alt"></i></button>
                                                                             </div>
                                                                         ))}
                                                                         <button onClick={() => setEditingItems({...editingItems, items: [...editingItems.items, {model:'', vendorModel:'', quantity:1, unitPrice:'', unitPriceUsd:'', remark:''}]})} className="text-xs text-blue-600 font-bold bg-blue-100 px-2 py-1 rounded hover:bg-blue-200 mt-2"><i className="fas fa-plus mr-1"></i>新增一列</button>
@@ -715,7 +722,7 @@
                                     );
                                 })}
                                 {processedOrders.length === 0 && (
-                                    <tr><td colSpan="8" className="p-8 text-center text-gray-400">目前沒有符合的採購單紀錄</td></tr>
+                                    <tr><td colSpan="7" className="p-8 text-center text-gray-400">目前沒有符合的採購單紀錄</td></tr>
                                 )}
                             </tbody>
                         </table>
