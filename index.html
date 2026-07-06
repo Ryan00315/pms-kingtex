@@ -693,56 +693,49 @@
                             <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
                                 <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md">
                                     <h2 className="text-lg font-bold mb-4">{priceModal.id ? '修改單價與機型資訊' : '新增機型與單價'}</h2>
-                                    <form onSubmit={handleSavePrice} className="space-y-4">
+                                    {/* 修改後的新增/編輯彈出視窗內容 */}
+                                <form onSubmit={handleSavePrice} className="space-y-4">
+                                    {/* 第一區塊：基本資料 */}
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                         <div>
-                                            <label className="block text-xs font-bold mb-1 text-gray-700">供應商 (分類) <span className="text-gray-400 font-normal">可從廠商管理建立</span></label>
-                                            <select value={priceModal.vendor} onChange={e => setPriceModal({...priceModal, vendor: e.target.value})} className="w-full border p-2 rounded text-sm bg-white focus:ring-1 focus:ring-blue-500 outline-none">
-                                                <option value="">未分類</option>
-                                                {vendors.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
-                                            </select>
-                                        </div>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                            <div>
-                                                <label className="block text-xs font-bold mb-1">精機型號 <span className="text-red-500">*必填</span></label>
-                                                <input type="text" value={priceModal.model} disabled={!!priceModal.id} onChange={e => setPriceModal({...priceModal, model: e.target.value})} className="w-full border p-2 rounded text-sm disabled:bg-gray-100 outline-none focus:ring-1 focus:ring-blue-500" required />
-                                            </div>
-                                            <div>
-                                                <label className="block text-xs font-bold mb-1 text-gray-700">廠商型號 <span className="text-gray-400 font-normal">選填</span></label>
-                                                <input type="text" value={priceModal.vendorModel} onChange={e => setPriceModal({...priceModal, vendorModel: e.target.value})} className="w-full border p-2 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" placeholder="對應的廠方型號" />
-                                            </div>
-                                        </div>
-                                        <div className="flex gap-3 pt-2 border-t">
-                                            <div className="flex-1">
-                                                <label className="block text-xs font-bold mb-1 text-blue-800">單價 (RMB) <span className="text-red-500">*必填</span></label>
-                                                <input 
-    type="text" 
-    value={priceModal.price} 
-    onChange={e => setPriceModal({...priceModal, price: e.target.value})} 
-    className="w-full border p-2 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" 
-    placeholder="輸入數字或 N"
-    required 
-/>
-                                            </div>
-                                            <div className="flex-1">
-                                                <label className="block text-xs font-bold mb-1 text-gray-700">單價 (USD) <span className="text-gray-400 font-normal">選填</span></label>
-                                                <input type="number" step="0.01" value={priceModal.priceUsd} onChange={e => setPriceModal({...priceModal, priceUsd: e.target.value})} className="w-full border p-2 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" min="0" placeholder="無" />
-                                            </div>
-                                        </div>
-                                        <div className="grid grid-cols-2 gap-3 pt-2">
-                                        <div>
-                                            <label className="block text-xs font-bold mb-1 text-red-600">本次異動原因 <span className="text-red-500">*必填</span></label>
-                                            <input type="text" value={priceModal.reason} placeholder="例如：年度調漲" onChange={e => setPriceModal({...priceModal, reason: e.target.value})} className="w-full border border-red-200 p-2 rounded text-sm outline-none" required />
+                                            <label className="block text-xs font-bold mb-1">精機型號 <span className="text-red-500">*必填</span></label>
+                                            <input type="text" value={priceModal.model} disabled={!!priceModal.id} onChange={e => setPriceModal({...priceModal, model: e.target.value})} className="w-full border p-2 rounded text-sm disabled:bg-gray-100 outline-none focus:ring-1 focus:ring-blue-500" required />
                                         </div>
                                         <div>
-                                            <label className="block text-xs font-bold mb-1 text-gray-700">備註 <span className="text-gray-400 font-normal">選填</span></label>
-                                            <input type="text" value={priceModal.remark} placeholder="補充說明..." onChange={e => setPriceModal({...priceModal, remark: e.target.value})} className="w-full border p-2 rounded text-sm outline-none" />
+                                            <label className="block text-xs font-bold mb-1 text-gray-700">廠商型號</label>
+                                            <input type="text" value={priceModal.vendorModel} onChange={e => setPriceModal({...priceModal, vendorModel: e.target.value})} className="w-full border p-2 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" />
                                         </div>
                                     </div>
-                                        <div className="flex gap-2 mt-6">
-                                            <button type="button" onClick={() => setPriceModal({isOpen: false, id: null, vendor: '', model: '', vendorModel: '', price: '', priceUsd: '', reason: ''})} className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 rounded text-sm font-bold text-gray-700 transition-colors">取消</button>
-                                            <button type="submit" className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-bold transition-colors">儲存並記錄</button>
+                                
+                                    {/* 第二區塊：單價 (縮小版) */}
+                                    <div className="flex gap-3">
+                                        <div className="w-1/2">
+                                            <label className="block text-xs font-bold mb-1 text-blue-800">單價 (RMB)</label>
+                                            <input type="text" value={priceModal.price} onChange={e => setPriceModal({...priceModal, price: e.target.value})} className="w-full border p-1.5 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" placeholder="數字或 N" required />
                                         </div>
-                                    </form>
+                                        <div className="w-1/2">
+                                            <label className="block text-xs font-bold mb-1 text-gray-700">單價 (USD)</label>
+                                            <input type="number" step="0.01" value={priceModal.priceUsd} onChange={e => setPriceModal({...priceModal, priceUsd: e.target.value})} className="w-full border p-1.5 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" placeholder="數字" />
+                                        </div>
+                                    </div>
+                                
+                                    {/* 第三區塊：本次異動原因 (往上移) */}
+                                    <div>
+                                        <label className="block text-xs font-bold mb-1 text-red-600">本次異動原因 <span className="text-red-500">*必填</span></label>
+                                        <input type="text" value={priceModal.reason} placeholder="例如：2026年度調漲..." onChange={e => setPriceModal({...priceModal, reason: e.target.value})} className="w-full border border-red-200 p-2 rounded text-sm outline-none focus:ring-1 focus:ring-red-500" required />
+                                    </div>
+                                
+                                    {/* 第四區塊：備註 (獨立在下) */}
+                                    <div>
+                                        <label className="block text-xs font-bold mb-1 text-gray-700">備註</label>
+                                        <textarea value={priceModal.remark} placeholder="補充說明..." onChange={e => setPriceModal({...priceModal, remark: e.target.value})} className="w-full border p-2 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500 h-20" />
+                                    </div>
+                                
+                                    <div className="flex gap-2 mt-4">
+                                        <button type="button" onClick={() => setPriceModal({...priceModal, isOpen: false})} className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 rounded text-sm font-bold text-gray-700">取消</button>
+                                        <button type="submit" className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-bold">儲存</button>
+                                    </div>
+                                </form>
                                 </div>
                             </div>
                         )}
