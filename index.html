@@ -464,6 +464,23 @@
                 if (!groupedPrices[v]) groupedPrices[v] = [];
                 groupedPrices[v].push(p);
             });
+            
+            // 對每個廠商底下的機型進行精準排序
+            Object.keys(groupedPrices).forEach(v => {
+                groupedPrices[v].sort((a, b) => {
+                    // 1. 優先判斷手動拖曳的 sortIndex (有拖曳過的會優先於字母排序)
+                    const idxA = a.sortIndex !== undefined ? a.sortIndex : 9999;
+                    const idxB = b.sortIndex !== undefined ? b.sortIndex : 9999;
+                    if (idxA !== idxB) return idxA - idxB;
+            
+                    // 2. 若無拖曳順序，則依照「精機型號 (model)」進行字母與數字混合排序
+                    // numeric: true 會讓字串中的數字部分視為數字大小來比對 (例如: "機型2" 會排在 "機型10" 前面)
+                    return (a.model || '').localeCompare(b.model || '', undefined, {
+                        numeric: true, 
+                        sensitivity: 'base'
+                    });
+                });
+            });
 
             Object.keys(groupedPrices).forEach(v => {
                 groupedPrices[v].sort((a, b) => {
