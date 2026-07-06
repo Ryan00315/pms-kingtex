@@ -984,7 +984,7 @@
                                                                     {isAdmin && (
                                                                         <div className="flex gap-2 flex-wrap justify-end">
                                                                             {editingHeader.id === order.dbId ? null : (
-                                                                                <button onClick={() => setEditingHeader({id: order.dbId, displayId: order.displayId, vendor: order.vendor, orderDate: order.orderDate, deliveryDate: order.deliveryDate})} className="text-xs bg-yellow-50 text-yellow-700 px-2 py-1 rounded font-bold border border-yellow-200 hover:bg-yellow-100 transition-colors"><i className="fas fa-edit mr-1"></i>編輯基本資訊</button>
+                                                                                <button onClick={() => setEditingHeader({id: order.dbId, displayId: order.displayId, vendor: order.vendor, orderDate: order.orderDate, deliveryDate: order.deliveryDate})} className="text-xs bg-yellow-50 text-yellow-700 px-2 py-1 rounded font-bold border border-yellow-200 hover:bg-yellow-100 transition-colors"><i className="fas fa-edit mr-1"></i>編輯採購單</button>
                                                                             )}
                                                                             
                                                                             {editingItems.orderId === order.dbId ? (
