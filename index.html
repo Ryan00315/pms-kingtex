@@ -348,43 +348,51 @@
             };
 
             const handleSavePrice = async (e) => {
-                e.preventDefault();
-                if(!priceModal.model || !priceModal.price || !priceModal.reason) return alert("請填寫完整必填資訊與變更原因");
-                
-                const newHistoryEntry = {
-                    date: new Date().toISOString(),
-                    price: Number(priceModal.price),
-                    priceUsd: priceModal.priceUsd ? Number(priceModal.priceUsd) : null,
-                    reason: priceModal.reason
-                };
+    e.preventDefault();
+    
+    // 除錯偵測：在控制台印出到底哪個值為空，這樣您就能知道問題出在哪
+    console.log("當前編輯資料:", priceModal);
+    
+    // 嚴格檢查必填項目 (請注意：如果 vendor 或 model 沒填，也會被擋下)
+    if (!priceModal.vendor || !priceModal.model || !priceModal.price || !priceModal.reason) {
+        alert(`請檢查是否有欄位漏填！\n\n檢查清單：\n1. 廠商: ${priceModal.vendor || '未選'}\n2. 精機型號: ${priceModal.model || '未填'}\n3. 單價(RMB): ${priceModal.price || '未填'}\n4. 異動原因: ${priceModal.reason || '未填'}`);
+        return;
+    }
+    
+    const newHistoryEntry = {
+        date: new Date().toISOString(),
+        price: Number(priceModal.price),
+        priceUsd: priceModal.priceUsd ? Number(priceModal.priceUsd) : null,
+        reason: priceModal.reason
+    };
 
-                try {
-                    if (priceModal.id) {
-                        await db.collection('po_prices').doc(priceModal.id).update({
-                            vendor: priceModal.vendor || '未分類',
-                            model: priceModal.model,
-                            vendorModel: priceModal.vendorModel || '',
-                            price: Number(priceModal.price),
-                            priceUsd: priceModal.priceUsd ? Number(priceModal.priceUsd) : null,
-                            history: firebase.firestore.FieldValue.arrayUnion(newHistoryEntry)
-                        });
-                    } else {
-                        await db.collection('po_prices').add({
-                            vendor: priceModal.vendor || '未分類',
-                            model: priceModal.model,
-                            vendorModel: priceModal.vendorModel || '',
-                            price: Number(priceModal.price),
-                            priceUsd: priceModal.priceUsd ? Number(priceModal.priceUsd) : null,
-                            sortIndex: 9999, 
-                            history: [newHistoryEntry]
-                        });
-                    }
-                    setPriceModal({ isOpen: false, id: null, vendor: '', model: '', vendorModel: '', price: '', priceUsd: '', reason: '' });
-                } catch (error) {
-                    console.error(error);
-                    alert("單價儲存失敗！");
-                }
-            };
+    try {
+        if (priceModal.id) {
+            await db.collection('po_prices').doc(priceModal.id).update({
+                vendor: priceModal.vendor,
+                model: priceModal.model,
+                vendorModel: priceModal.vendorModel || '',
+                price: Number(priceModal.price),
+                priceUsd: priceModal.priceUsd ? Number(priceModal.priceUsd) : null,
+                history: firebase.firestore.FieldValue.arrayUnion(newHistoryEntry)
+            });
+        } else {
+            await db.collection('po_prices').add({
+                vendor: priceModal.vendor,
+                model: priceModal.model,
+                vendorModel: priceModal.vendorModel || '',
+                price: Number(priceModal.price),
+                priceUsd: priceModal.priceUsd ? Number(priceModal.priceUsd) : null,
+                sortIndex: 9999, 
+                history: [newHistoryEntry]
+            });
+        }
+        setPriceModal({ isOpen: false, id: null, vendor: '', model: '', vendorModel: '', price: '', priceUsd: '', reason: '' });
+    } catch (error) {
+        console.error(error);
+        alert("單價儲存失敗，請檢查網路！");
+    }
+};
 
             const handleDragStart = (e, id) => {
                 setDraggedPriceId(id);
