@@ -95,7 +95,7 @@
             const [loginError, setLoginError] = useState('');
 
             // 廠商管理狀態
-            const [vendorModal, setVendorModal] = useState({ isOpen: false, id: null, name: '', contact: '', address: '', phone: '' });
+            const [vendorModal, setVendorModal] = useState({ isOpen: false, id: null, name: '', contact: '', address: '', phone: '', remark: '' });
 
             // 單價管理狀態
             const [priceModal, setPriceModal] = useState({ isOpen: false, id: null, vendor: '', model: '', vendorModel: '', price: '', priceUsd: '', reason: '' });
@@ -369,28 +369,30 @@
                 reason: priceModal.reason
             };
         
+            const saveData = {
+                vendor: priceModal.vendor,
+                model: priceModal.model,
+                vendorModel: priceModal.vendorModel || '',
+                price: rmbVal,
+                priceUsd: usdVal,
+                remark: priceModal.remark // 存入備註
+            };
+        
             try {
                 if (priceModal.id) {
                     await db.collection('po_prices').doc(priceModal.id).update({
-                        vendor: priceModal.vendor,
-                        model: priceModal.model,
-                        vendorModel: priceModal.vendorModel || '',
-                        price: rmbVal,
-                        priceUsd: usdVal,
+                        ...saveData,
                         history: firebase.firestore.FieldValue.arrayUnion(newHistoryEntry)
                     });
                 } else {
                     await db.collection('po_prices').add({
-                        vendor: priceModal.vendor,
-                        model: priceModal.model,
-                        vendorModel: priceModal.vendorModel || '',
-                        price: rmbVal,
-                        priceUsd: usdVal,
-                        sortIndex: 9999, 
+                        ...saveData,
+                        sortIndex: 9999,
                         history: [newHistoryEntry]
                     });
                 }
-                setPriceModal({ isOpen: false, id: null, vendor: '', model: '', vendorModel: '', price: '', priceUsd: '', reason: '' });
+                // 重置欄位 (記得加入 remark)
+                setPriceModal({ isOpen: false, id: null, vendor: '', model: '', vendorModel: '', price: '', priceUsd: '', reason: '', remark: '' });
             } catch (error) {
                 console.error(error);
                 alert("單價儲存失敗，請檢查網路！");
@@ -726,10 +728,16 @@
                                                 <input type="number" step="0.01" value={priceModal.priceUsd} onChange={e => setPriceModal({...priceModal, priceUsd: e.target.value})} className="w-full border p-2 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" min="0" placeholder="無" />
                                             </div>
                                         </div>
-                                        <div className="pt-2">
+                                        <div className="grid grid-cols-2 gap-3 pt-2">
+                                        <div>
                                             <label className="block text-xs font-bold mb-1 text-red-600">本次異動原因 <span className="text-red-500">*必填</span></label>
-                                            <input type="text" value={priceModal.reason} placeholder="例如：2026年度調漲、新增品項..." onChange={e => setPriceModal({...priceModal, reason: e.target.value})} className="w-full border border-red-200 focus:border-red-500 p-2 rounded text-sm outline-none focus:ring-1" required />
+                                            <input type="text" value={priceModal.reason} placeholder="例如：年度調漲" onChange={e => setPriceModal({...priceModal, reason: e.target.value})} className="w-full border border-red-200 p-2 rounded text-sm outline-none" required />
                                         </div>
+                                        <div>
+                                            <label className="block text-xs font-bold mb-1 text-gray-700">備註 <span className="text-gray-400 font-normal">選填</span></label>
+                                            <input type="text" value={priceModal.remark} placeholder="補充說明..." onChange={e => setPriceModal({...priceModal, remark: e.target.value})} className="w-full border p-2 rounded text-sm outline-none" />
+                                        </div>
+                                    </div>
                                         <div className="flex gap-2 mt-6">
                                             <button type="button" onClick={() => setPriceModal({isOpen: false, id: null, vendor: '', model: '', vendorModel: '', price: '', priceUsd: '', reason: ''})} className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 rounded text-sm font-bold text-gray-700 transition-colors">取消</button>
                                             <button type="submit" className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-bold transition-colors">儲存並記錄</button>
