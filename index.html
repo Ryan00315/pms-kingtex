@@ -43,14 +43,6 @@
         const auth = firebase.auth();
         const db = firebase.firestore();
 
-        // 系統預設供應商清單 (共用)
-        const vendorOptions = [
-            "杜馬 ( DUMA )",
-            "多樂 ( DOLLOR )",
-            "力佳 ( LIJIA )",
-            "雄宸 ( XIONG CHENCE )"
-        ];
-
         function App() {
             // 動態取得當前電腦的本地日期
             const d = new Date();
@@ -63,7 +55,9 @@
             
             const [orders, setOrders] = useState([]);
             const [prices, setPrices] = useState([]); 
+            const [vendors, setVendors] = useState([]); // 新增：廠商資料庫
             
+            // 切換頁面：'PO_LIST' 或 'PRICE_MANAGEMENT' 或 'VENDOR_MANAGEMENT'
             const [currentView, setCurrentView] = useState('PO_LIST'); 
             
             const [showAddForm, setShowAddForm] = useState(false);
@@ -75,7 +69,6 @@
             const [sortOrder, setSortOrder] = useState('desc'); 
             
             const [editingItems, setEditingItems] = useState({ orderId: null, items: [] });
-            const [isCustomVendor, setIsCustomVendor] = useState(false);
             
             // 防呆與儲存狀態提示
             const [isSubmitting, setIsSubmitting] = useState(false);
@@ -87,10 +80,12 @@
             const [loginForm, setLoginForm] = useState({ username: '', password: '' });
             const [loginError, setLoginError] = useState('');
 
-            // 單價管理狀態 (新增 vendor, vendorModel)
+            // 廠商管理狀態
+            const [vendorModal, setVendorModal] = useState({ isOpen: false, id: null, name: '', contact: '', address: '', phone: '' });
+
+            // 單價管理狀態
             const [priceModal, setPriceModal] = useState({ isOpen: false, id: null, vendor: '', model: '', vendorModel: '', price: '', priceUsd: '', reason: '' });
             const [historyModal, setHistoryModal] = useState({ isOpen: false, model: '', history: [] });
-            const [priceCustomVendor, setPriceCustomVendor] = useState(false);
             
             // 單價管理的搜尋過濾狀態
             const [priceSearch, setPriceSearch] = useState({ vendor: '', model: '' });
@@ -123,6 +118,7 @@
                 return () => unsubscribe();
             }, []);
 
+            // 監聽訂單、單價與廠商資料庫
             useEffect(() => {
                 if (!firebaseUser) return;
                 
@@ -138,7 +134,14 @@
                     setPrices(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
                 }, err => console.error("讀取單價失敗:", err));
 
-                return () => { unsubOrders(); unsubPrices(); };
+                const unsubVendors = db.collection('po_vendors').onSnapshot(snapshot => {
+                    // 依照名稱排序
+                    const vList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    vList.sort((a, b) => a.name.localeCompare(b.name));
+                    setVendors(vList);
+                }, err => console.error("讀取廠商失敗:", err));
+
+                return () => { unsubOrders(); unsubPrices(); unsubVendors(); };
             }, [firebaseUser]);
 
             const handleLogin = (e) => {
@@ -180,6 +183,32 @@
                 }, 0);
             };
 
+            // --- 廠商管理儲存邏輯 ---
+            const handleSaveVendor = async (e) => {
+                e.preventDefault();
+                if (!vendorModal.name.trim()) return alert("請填寫廠商名稱");
+                
+                try {
+                    const vData = {
+                        name: vendorModal.name.trim(),
+                        contact: vendorModal.contact.trim(),
+                        address: vendorModal.address.trim(),
+                        phone: vendorModal.phone.trim()
+                    };
+                    
+                    if (vendorModal.id) {
+                        await db.collection('po_vendors').doc(vendorModal.id).update(vData);
+                    } else {
+                        await db.collection('po_vendors').add(vData);
+                    }
+                    setVendorModal({ isOpen: false, id: null, name: '', contact: '', address: '', phone: '' });
+                } catch (error) {
+                    console.error("廠商儲存失敗:", error);
+                    alert("廠商儲存失敗！");
+                }
+            };
+
+            // --- 採購單儲存邏輯 ---
             const handleSubmit = async (e) => {
                 e.preventDefault(); 
                 if (isSubmitting) return; 
@@ -217,7 +246,6 @@
                     
                     setFormData(initialFormState);
                     setShowAddForm(false);
-                    setIsCustomVendor(false);
                     
                 } catch (error) {
                     console.error("寫入 Firebase 失敗:", error);
@@ -287,7 +315,6 @@
                             history: firebase.firestore.FieldValue.arrayUnion(newHistoryEntry)
                         });
                     } else {
-                        // 新增機型時，可以預設賦予一個極大的 sortIndex，讓它排在最後面
                         await db.collection('po_prices').add({
                             vendor: priceModal.vendor || '未分類',
                             model: priceModal.model,
@@ -299,7 +326,6 @@
                         });
                     }
                     setPriceModal({ isOpen: false, id: null, vendor: '', model: '', vendorModel: '', price: '', priceUsd: '', reason: '' });
-                    setPriceCustomVendor(false);
                 } catch (error) {
                     console.error(error);
                     alert("單價儲存失敗！");
@@ -327,7 +353,6 @@
                 e.preventDefault();
                 if (!draggedPriceId || draggedPriceId === targetId) return;
 
-                // 複製該群組陣列來做順序變更
                 const group = [...vendorGroupArr];
                 const draggedIdx = group.findIndex(p => p.id === draggedPriceId);
                 const targetIdx = group.findIndex(p => p.id === targetId);
@@ -337,7 +362,6 @@
                 const [draggedItem] = group.splice(draggedIdx, 1);
                 group.splice(targetIdx, 0, draggedItem);
 
-                // 批次更新 Firebase 中的 sortIndex
                 try {
                     const batch = db.batch();
                     group.forEach((item, index) => {
@@ -352,7 +376,6 @@
                 
                 setDraggedPriceId(null);
             };
-
 
             const totalAmount = orders.reduce((sum, order) => sum + order.amount, 0);
             let processedOrders = orders.filter(o => {
@@ -369,7 +392,6 @@
                 return sortOrder === 'desc' ? timeB - timeA : timeA - timeB;
             });
 
-            // 處理單價分區與排序邏輯
             const groupedPrices = {};
             prices.forEach(p => {
                 const v = p.vendor || '未分類';
@@ -377,7 +399,6 @@
                 groupedPrices[v].push(p);
             });
 
-            // 對每個廠商底下的機型進行排序 (有 sortIndex 就照 sortIndex，沒有就照字母)
             Object.keys(groupedPrices).forEach(v => {
                 groupedPrices[v].sort((a, b) => {
                     const idxA = a.sortIndex !== undefined ? a.sortIndex : 9999;
@@ -391,11 +412,91 @@
 
             let currentMonthGroup = '';
 
+            // ---------------- 廠商管理頁面 ----------------
+            if (currentView === 'VENDOR_MANAGEMENT' && isAdmin) {
+                return (
+                    <div className="max-w-5xl mx-auto p-4 md:p-8 space-y-5">
+                        <div className="bg-white p-4 rounded-xl shadow-sm flex justify-between items-center border border-gray-200">
+                            <h1 className="text-xl font-bold text-gray-900"><i className="fas fa-building text-indigo-600 mr-2"></i>供應商(廠商)管理中心</h1>
+                            <button onClick={() => setCurrentView('PO_LIST')} className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg text-sm font-bold hover:bg-gray-200">
+                                <i className="fas fa-arrow-left mr-2"></i>返回採購單
+                            </button>
+                        </div>
+
+                        <div className="bg-white rounded-xl shadow-sm border p-5">
+                            <div className="flex justify-between items-center mb-4">
+                                <h2 className="font-bold text-lg">現有供應商列表</h2>
+                                <button onClick={() => setVendorModal({ isOpen: true, id: null, name: '', contact: '', address: '', phone: '' })} className="bg-indigo-600 text-white px-3 py-1.5 rounded text-sm font-medium hover:bg-indigo-700">
+                                    <i className="fas fa-plus mr-1"></i> 新增廠商
+                                </button>
+                            </div>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left">
+                                    <thead className="bg-gray-100 text-sm">
+                                        <tr>
+                                            <th className="p-3">廠商名稱</th>
+                                            <th className="p-3">聯絡窗口</th>
+                                            <th className="p-3">廠商電話</th>
+                                            <th className="p-3">廠商地址</th>
+                                            <th className="p-3 text-center">操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y text-sm">
+                                        {vendors.map(v => (
+                                            <tr key={v.id} className="hover:bg-gray-50">
+                                                <td className="p-3 font-bold text-gray-800">{v.name}</td>
+                                                <td className="p-3 text-gray-600">{v.contact || '-'}</td>
+                                                <td className="p-3 text-gray-600">{v.phone || '-'}</td>
+                                                <td className="p-3 text-gray-600">{v.address || '-'}</td>
+                                                <td className="p-3 text-center">
+                                                    <button onClick={() => setVendorModal({ isOpen: true, ...v })} className="text-indigo-600 hover:text-indigo-800 bg-indigo-50 px-2 py-1 rounded" title="修改"><i className="fas fa-edit mr-1"></i>編輯</button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                        {vendors.length === 0 && <tr><td colSpan="5" className="p-5 text-center text-gray-500">尚無廠商資料，請點擊右上方新增。</td></tr>}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        {/* 廠商編輯彈出視窗 */}
+                        {vendorModal.isOpen && (
+                            <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+                                <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md">
+                                    <h2 className="text-lg font-bold mb-4 text-indigo-900">{vendorModal.id ? '修改廠商資料' : '新增供應商'}</h2>
+                                    <form onSubmit={handleSaveVendor} className="space-y-4">
+                                        <div>
+                                            <label className="block text-xs font-bold mb-1">廠商名稱 <span className="text-red-500">*必填</span></label>
+                                            <input type="text" value={vendorModal.name} onChange={e => setVendorModal({...vendorModal, name: e.target.value})} className="w-full border p-2 rounded text-sm focus:ring-1 focus:ring-indigo-500 outline-none" placeholder="例如：杜馬 ( DUMA )" required />
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                            <div>
+                                                <label className="block text-xs font-bold mb-1 text-gray-700">聯絡窗口 <span className="text-gray-400 font-normal">選填</span></label>
+                                                <input type="text" value={vendorModal.contact} onChange={e => setVendorModal({...vendorModal, contact: e.target.value})} className="w-full border p-2 rounded text-sm focus:ring-1 focus:ring-indigo-500 outline-none" placeholder="聯絡人姓名" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-bold mb-1 text-gray-700">廠商電話 <span className="text-gray-400 font-normal">選填</span></label>
+                                                <input type="text" value={vendorModal.phone} onChange={e => setVendorModal({...vendorModal, phone: e.target.value})} className="w-full border p-2 rounded text-sm focus:ring-1 focus:ring-indigo-500 outline-none" placeholder="電話號碼" />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold mb-1 text-gray-700">廠商地址 <span className="text-gray-400 font-normal">選填</span></label>
+                                            <input type="text" value={vendorModal.address} onChange={e => setVendorModal({...vendorModal, address: e.target.value})} className="w-full border p-2 rounded text-sm focus:ring-1 focus:ring-indigo-500 outline-none" placeholder="完整地址" />
+                                        </div>
+                                        <div className="flex gap-2 mt-6 border-t pt-4">
+                                            <button type="button" onClick={() => setVendorModal({isOpen: false, id: null, name: '', contact: '', address: '', phone: ''})} className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 rounded text-sm font-bold text-gray-700 transition-colors">取消</button>
+                                            <button type="submit" className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-sm font-bold transition-colors">儲存廠商</button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                );
+            }
+
             // ---------------- 單價管理頁面 ----------------
             if (currentView === 'PRICE_MANAGEMENT' && isAdmin) {
-                // 取得所有存在的廠商列表 (包含預設與資料庫中自訂的)
-                const dynamicVendors = [...new Set([...vendorOptions, ...prices.map(p => p.vendor).filter(v => v && v !== '未分類')])];
-
                 return (
                     <div className="max-w-5xl mx-auto p-4 md:p-8 space-y-5">
                         <div className="bg-white p-4 rounded-xl shadow-sm flex justify-between items-center border border-gray-200">
@@ -412,14 +513,14 @@
                                     <select value={priceSearch.vendor} onChange={e => setPriceSearch({...priceSearch, vendor: e.target.value})} className="border border-gray-300 rounded px-3 py-2 text-sm focus:ring-1 focus:ring-blue-500 outline-none">
                                         <option value="">-- 所有供應商 --</option>
                                         <option value="未分類">未分類</option>
-                                        {dynamicVendors.map(v => <option key={v} value={v}>{v}</option>)}
+                                        {vendors.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
                                     </select>
                                     <div className="relative flex-1 md:w-64">
                                         <i className="fas fa-search absolute left-3 top-2.5 text-gray-400 text-sm"></i>
                                         <input type="text" placeholder="搜尋精機或廠商型號..." value={priceSearch.model} onChange={e => setPriceSearch({...priceSearch, model: e.target.value})} className="pl-9 pr-3 py-2 w-full border border-gray-300 rounded text-sm focus:ring-1 focus:ring-blue-500 outline-none" />
                                     </div>
                                 </div>
-                                <button onClick={() => { setPriceModal({ isOpen: true, id: null, vendor: '', model: '', vendorModel: '', price: '', priceUsd: '', reason: '' }); setPriceCustomVendor(false); }} className="w-full md:w-auto bg-blue-600 text-white px-4 py-2 rounded text-sm font-bold hover:bg-blue-700 shadow-sm whitespace-nowrap">
+                                <button onClick={() => { setPriceModal({ isOpen: true, id: null, vendor: '', model: '', vendorModel: '', price: '', priceUsd: '', reason: '' }); }} className="w-full md:w-auto bg-blue-600 text-white px-4 py-2 rounded text-sm font-bold hover:bg-blue-700 shadow-sm whitespace-nowrap">
                                     <i className="fas fa-plus mr-1"></i> 新增機型
                                 </button>
                             </div>
@@ -441,7 +542,7 @@
                                         return true;
                                     });
 
-                                    if (filteredGroup.length === 0) return null; // 該分區無符合資料則隱藏
+                                    if (filteredGroup.length === 0) return null;
 
                                     // 如果有輸入型號搜尋，暫時鎖定拖曳功能，避免陣列 index 錯亂
                                     const isDraggable = priceSearch.model.trim() === '';
@@ -499,23 +600,15 @@
                         {/* 修改價格彈出視窗 */}
                         {priceModal.isOpen && (
                             <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-                                <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-lg">
+                                <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md">
                                     <h2 className="text-lg font-bold mb-4">{priceModal.id ? '修改單價與機型資訊' : '新增機型與單價'}</h2>
                                     <form onSubmit={handleSavePrice} className="space-y-4">
                                         <div>
-                                            <label className="block text-xs font-bold mb-1 text-gray-700">供應商 (分類)</label>
-                                            {priceCustomVendor ? (
-                                                <div className="flex items-center gap-1">
-                                                    <input type="text" value={priceModal.vendor} onChange={e => setPriceModal({...priceModal, vendor: e.target.value})} placeholder="輸入新廠家名稱..." className="w-full border p-2 rounded text-sm focus:ring-1 focus:ring-blue-500 outline-none" autoFocus />
-                                                    <button type="button" onClick={() => { setPriceCustomVendor(false); setPriceModal({...priceModal, vendor: ''}); }} className="px-2 py-1.5 text-gray-400 hover:text-red-500 border border-transparent rounded bg-gray-50 hover:bg-red-50"><i className="fas fa-times"></i></button>
-                                                </div>
-                                            ) : (
-                                                <select value={priceModal.vendor} onChange={e => { if (e.target.value === 'CUSTOM') { setPriceCustomVendor(true); setPriceModal({...priceModal, vendor: ''}); } else { setPriceModal({...priceModal, vendor: e.target.value}); } }} className="w-full border p-2 rounded text-sm bg-white focus:ring-1 focus:ring-blue-500 outline-none">
-                                                    <option value="">未分類</option>
-                                                    {vendorOptions.map(v => <option key={v} value={v}>{v}</option>)}
-                                                    <option value="CUSTOM" className="font-bold text-blue-600 bg-blue-50">+ 自訂新廠商...</option>
-                                                </select>
-                                            )}
+                                            <label className="block text-xs font-bold mb-1 text-gray-700">供應商 (分類) <span className="text-gray-400 font-normal">可從廠商管理建立</span></label>
+                                            <select value={priceModal.vendor} onChange={e => setPriceModal({...priceModal, vendor: e.target.value})} className="w-full border p-2 rounded text-sm bg-white focus:ring-1 focus:ring-blue-500 outline-none">
+                                                <option value="">未分類</option>
+                                                {vendors.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
+                                            </select>
                                         </div>
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                             <div>
@@ -542,7 +635,7 @@
                                             <input type="text" value={priceModal.reason} placeholder="例如：2026年度調漲、新增品項..." onChange={e => setPriceModal({...priceModal, reason: e.target.value})} className="w-full border border-red-200 focus:border-red-500 p-2 rounded text-sm outline-none focus:ring-1" required />
                                         </div>
                                         <div className="flex gap-2 mt-6">
-                                            <button type="button" onClick={() => {setPriceModal({isOpen: false, id: null, vendor: '', model: '', vendorModel: '', price: '', priceUsd: '', reason: ''}); setPriceCustomVendor(false);}} className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 rounded text-sm font-bold text-gray-700 transition-colors">取消</button>
+                                            <button type="button" onClick={() => setPriceModal({isOpen: false, id: null, vendor: '', model: '', vendorModel: '', price: '', priceUsd: '', reason: ''})} className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 rounded text-sm font-bold text-gray-700 transition-colors">取消</button>
                                             <button type="submit" className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-bold transition-colors">儲存並記錄</button>
                                         </div>
                                     </form>
@@ -615,9 +708,14 @@
                             </div>
                             
                             {isAdmin && (
-                                <button onClick={() => setCurrentView('PRICE_MANAGEMENT')} className="px-3 py-1.5 bg-blue-100 text-blue-700 rounded-lg text-sm font-bold hover:bg-blue-200 shadow-sm border border-blue-200">
-                                    <i className="fas fa-tags mr-2"></i>單價管理
-                                </button>
+                                <div className="flex gap-2">
+                                    <button onClick={() => setCurrentView('VENDOR_MANAGEMENT')} className="px-3 py-1.5 bg-indigo-100 text-indigo-700 rounded-lg text-sm font-bold hover:bg-indigo-200 shadow-sm border border-indigo-200 transition-colors">
+                                        <i className="fas fa-building mr-2"></i>廠商管理
+                                    </button>
+                                    <button onClick={() => setCurrentView('PRICE_MANAGEMENT')} className="px-3 py-1.5 bg-blue-100 text-blue-700 rounded-lg text-sm font-bold hover:bg-blue-200 shadow-sm border border-blue-200 transition-colors">
+                                        <i className="fas fa-tags mr-2"></i>單價管理
+                                    </button>
+                                </div>
                             )}
 
                             {currentUser ? (
@@ -649,7 +747,7 @@
                             </div>
                         )}
 
-                        <button onClick={() => { setShowAddForm(!showAddForm); setIsCustomVendor(false); }} className="ml-auto flex items-center px-4 py-2.5 bg-gray-900 text-white rounded-lg text-sm font-medium">
+                        <button onClick={() => { setShowAddForm(!showAddForm); }} className="ml-auto flex items-center px-4 py-2.5 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors">
                             <i className={`fas ${showAddForm ? 'fa-times' : 'fa-plus'} mr-2`}></i>{showAddForm ? '取消新增' : '新增採購單'}
                         </button>
                     </div>
@@ -681,19 +779,11 @@
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                                     <div><label className="block text-xs text-gray-700">訂單編號</label><input type="text" value={formData.displayId} onChange={e => setFormData({...formData, displayId: e.target.value})} placeholder="留空由系統自動產生" className="w-full px-3 py-1.5 border rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" /></div>
                                     <div>
-                                        <label className="block text-xs font-bold mb-1 text-gray-700">供應商 (無限制)</label>
-                                        {isCustomVendor ? (
-                                            <div className="flex items-center gap-1">
-                                                <input type="text" value={formData.vendor} onChange={e => setFormData({...formData, vendor: e.target.value})} placeholder="輸入新廠家名稱..." className="w-full px-3 py-1.5 border rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" autoFocus />
-                                                <button type="button" onClick={() => { setIsCustomVendor(false); setFormData({...formData, vendor: ''}); }} className="px-2 py-1 text-gray-400 hover:text-red-500 border border-transparent rounded bg-gray-50 hover:bg-red-50" title="取消自訂"><i className="fas fa-times"></i></button>
-                                            </div>
-                                        ) : (
-                                            <select value={formData.vendor} onChange={e => { if (e.target.value === 'CUSTOM') { setIsCustomVendor(true); setFormData({...formData, vendor: ''}); } else { setFormData({...formData, vendor: e.target.value}); } }} className="w-full px-3 py-1.5 border rounded text-sm bg-white outline-none focus:ring-1 focus:ring-blue-500">
-                                                <option value="">請選擇供應商...</option>
-                                                {vendorOptions.map(v => <option key={v} value={v}>{v}</option>)}
-                                                <option value="CUSTOM" className="font-bold text-blue-600 bg-blue-50">+ 新增廠家名稱...</option>
-                                            </select>
-                                        )}
+                                        <label className="block text-xs font-bold mb-1 text-gray-700">供應商 (從廠商管理建立)</label>
+                                        <select value={formData.vendor} onChange={e => setFormData({...formData, vendor: e.target.value})} className="w-full px-3 py-1.5 border rounded text-sm bg-white outline-none focus:ring-1 focus:ring-blue-500">
+                                            <option value="">請選擇供應商...</option>
+                                            {vendors.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
+                                        </select>
                                     </div>
                                     <div><label className="block text-xs text-gray-700">訂單日期</label><input type="date" value={formData.orderDate} onChange={e => setFormData({...formData, orderDate: e.target.value})} className="w-full px-3 py-1.5 border rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" /></div>
                                     <div className="md:col-span-3"><label className="block text-xs font-bold mb-1 text-gray-700">預計交期 (無限制)</label><input type="date" value={formData.deliveryDate} onChange={e => setFormData({...formData, deliveryDate: e.target.value})} className="w-full md:w-1/3 px-3 py-1.5 border rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" /></div>
@@ -740,7 +830,7 @@
                                     })}
                                 </div>
                                 <div className="flex justify-end">
-                                    <button type="submit" disabled={isSubmitting} className="bg-blue-600 text-white font-bold py-2 px-8 rounded shadow-sm hover:bg-blue-700 text-sm disabled:bg-gray-400 disabled:cursor-not-allowed">
+                                    <button type="submit" disabled={isSubmitting} className="bg-blue-600 text-white font-bold py-2 px-8 rounded shadow-sm hover:bg-blue-700 text-sm disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors">
                                         {isSubmitting ? <><i className="fas fa-spinner fa-spin mr-2"></i>儲存中...</> : '儲存採購單'}
                                     </button>
                                 </div>
