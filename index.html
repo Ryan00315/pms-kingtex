@@ -183,10 +183,11 @@
 
             const formatRMB = (amount) => new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY', maximumFractionDigits: 2 }).format(amount || 0);
             const formatUSD = (amount) => amount ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(amount) : '-';
-
+            const isUnquoted = (val) => String(val).toUpperCase().trim() === 'N';
+            
             const calculateFormTotal = () => {
                 return formData.items.reduce((sum, item) => {
-                    const price = Number(item.unitPrice) || 0;
+                    const price = isUnquoted(item.unitPrice) ? 0 : (Number(item.unitPrice) || 0);
                     const qty = parseInt(item.quantity) || 0;
                     return sum + (price * qty);
                 }, 0);
@@ -214,6 +215,12 @@
                     console.error("廠商儲存失敗:", error);
                     alert("廠商儲存失敗！");
                 }
+            };
+
+            // 顯示單價時的格式化函式
+            const displayPrice = (val, isUsd = false) => {
+                if (isUnquoted(val)) return "未報價";
+                return isUsd ? formatUSD(val) : formatRMB(val);
             };
 
             const handleSubmit = async (e) => {
@@ -348,23 +355,13 @@
             };
 
             const handleSavePrice = async (e) => {
-    e.preventDefault();
-    
-    // 除錯偵測：在控制台印出到底哪個值為空，這樣您就能知道問題出在哪
-    console.log("當前編輯資料:", priceModal);
-    
-    // 嚴格檢查必填項目 (請注意：如果 vendor 或 model 沒填，也會被擋下)
-    if (!priceModal.vendor || !priceModal.model || !priceModal.price || !priceModal.reason) {
-        alert(`請檢查是否有欄位漏填！\n\n檢查清單：\n1. 廠商: ${priceModal.vendor || '未選'}\n2. 精機型號: ${priceModal.model || '未填'}\n3. 單價(RMB): ${priceModal.price || '未填'}\n4. 異動原因: ${priceModal.reason || '未填'}`);
-        return;
-    }
-    
-    const newHistoryEntry = {
-        date: new Date().toISOString(),
-        price: Number(priceModal.price),
-        priceUsd: priceModal.priceUsd ? Number(priceModal.priceUsd) : null,
-        reason: priceModal.reason
-    };
+                e.preventDefault();
+                // 檢查：若 RMB 欄位填了 N，就不強制檢查 price 必須是 Number
+                const rmbVal = priceModal.price.trim().toUpperCase() === 'N' ? 'N' : Number(priceModal.price);
+                const usdVal = (priceModal.priceUsd && priceModal.priceUsd.trim().toUpperCase() === 'N') ? 'N' : (priceModal.priceUsd ? Number(priceModal.priceUsd) : null);
+            
+                // ...接下來的 firebase update/add 邏輯，將 rmbVal 與 usdVal 存入即可
+            };
 
     try {
         if (priceModal.id) {
@@ -709,7 +706,14 @@
                                         <div className="flex gap-3 pt-2 border-t">
                                             <div className="flex-1">
                                                 <label className="block text-xs font-bold mb-1 text-blue-800">單價 (RMB) <span className="text-red-500">*必填</span></label>
-                                                <input type="number" step="0.01" value={priceModal.price} onChange={e => setPriceModal({...priceModal, price: e.target.value})} className="w-full border p-2 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" required min="0" />
+                                                <input 
+    type="text" 
+    value={priceModal.price} 
+    onChange={e => setPriceModal({...priceModal, price: e.target.value})} 
+    className="w-full border p-2 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" 
+    placeholder="輸入數字或 N"
+    required 
+/>
                                             </div>
                                             <div className="flex-1">
                                                 <label className="block text-xs font-bold mb-1 text-gray-700">單價 (USD) <span className="text-gray-400 font-normal">選填</span></label>
