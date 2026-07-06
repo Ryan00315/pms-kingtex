@@ -55,9 +55,8 @@
             
             const [orders, setOrders] = useState([]);
             const [prices, setPrices] = useState([]); 
-            const [vendors, setVendors] = useState([]); // 新增：廠商資料庫
+            const [vendors, setVendors] = useState([]); 
             
-            // 切換頁面：'PO_LIST' 或 'PRICE_MANAGEMENT' 或 'VENDOR_MANAGEMENT'
             const [currentView, setCurrentView] = useState('PO_LIST'); 
             
             const [showAddForm, setShowAddForm] = useState(false);
@@ -68,9 +67,10 @@
             const [dateRange, setDateRange] = useState({ start: '', end: '' });
             const [sortOrder, setSortOrder] = useState('desc'); 
             
+            // 編輯狀態管理
             const [editingItems, setEditingItems] = useState({ orderId: null, items: [] });
+            const [editingHeader, setEditingHeader] = useState({ id: null, displayId: '', vendor: '', orderDate: '', deliveryDate: '' }); // 新增：編輯採購單標頭狀態
             
-            // 防呆與儲存狀態提示
             const [isSubmitting, setIsSubmitting] = useState(false);
 
             // 權限管理
@@ -87,10 +87,7 @@
             const [priceModal, setPriceModal] = useState({ isOpen: false, id: null, vendor: '', model: '', vendorModel: '', price: '', priceUsd: '', reason: '' });
             const [historyModal, setHistoryModal] = useState({ isOpen: false, model: '', history: [] });
             
-            // 單價管理的搜尋過濾狀態
             const [priceSearch, setPriceSearch] = useState({ vendor: '', model: '' });
-            
-            // 拖曳排序狀態
             const [draggedPriceId, setDraggedPriceId] = useState(null);
 
             // 新增表單
@@ -118,7 +115,6 @@
                 return () => unsubscribe();
             }, []);
 
-            // 監聽訂單、單價與廠商資料庫
             useEffect(() => {
                 if (!firebaseUser) return;
                 
@@ -135,7 +131,6 @@
                 }, err => console.error("讀取單價失敗:", err));
 
                 const unsubVendors = db.collection('po_vendors').onSnapshot(snapshot => {
-                    // 依照名稱排序
                     const vList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                     vList.sort((a, b) => a.name.localeCompare(b.name));
                     setVendors(vList);
@@ -183,7 +178,6 @@
                 }, 0);
             };
 
-            // --- 廠商管理儲存邏輯 ---
             const handleSaveVendor = async (e) => {
                 e.preventDefault();
                 if (!vendorModal.name.trim()) return alert("請填寫廠商名稱");
@@ -208,7 +202,6 @@
                 }
             };
 
-            // --- 採購單儲存邏輯 ---
             const handleSubmit = async (e) => {
                 e.preventDefault(); 
                 if (isSubmitting) return; 
@@ -292,7 +285,57 @@
                 }
             };
 
-            // --- 單價管理儲存邏輯 ---
+            // --- 新增：儲存編輯後的採購單標頭 ---
+            const saveEditedHeader = async () => {
+                try {
+                    await db.collection('po_orders').doc(editingHeader.id).update({
+                        displayId: editingHeader.displayId,
+                        vendor: editingHeader.vendor,
+                        orderDate: editingHeader.orderDate,
+                        deliveryDate: editingHeader.deliveryDate
+                    });
+                    setEditingHeader({ id: null, displayId: '', vendor: '', orderDate: '', deliveryDate: '' });
+                } catch (error) {
+                    console.error("更新採購單資訊失敗:", error);
+                    alert("更新失敗！");
+                }
+            };
+
+            // --- 新增：刪除整筆採購單 ---
+            const handleDeleteOrder = async (orderDbId) => {
+                if (window.confirm("確定要永久刪除這筆採購單嗎？此動作無法復原！")) {
+                    try {
+                        await db.collection('po_orders').doc(orderDbId).delete();
+                        setExpandedOrderId(null); // 關閉展開視窗
+                    } catch (error) {
+                        console.error("刪除採購單失敗:", error);
+                        alert("刪除失敗！");
+                    }
+                }
+            };
+
+            // --- 新增：刪除單一明細項目 ---
+            const handleDeleteItem = async (order, itemIndex) => {
+                if (order.items.length <= 1) {
+                    return alert("採購單至少需要保留一項明細！若要全部刪除，請直接點擊右上角的「刪除採購單」。");
+                }
+                
+                if (window.confirm("確定要刪除此項明細嗎？")) {
+                    const newItems = order.items.filter((_, i) => i !== itemIndex);
+                    const newAmount = newItems.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
+                    
+                    try {
+                        await db.collection('po_orders').doc(order.dbId).update({
+                            items: newItems,
+                            amount: newAmount
+                        });
+                    } catch (error) {
+                        console.error("刪除明細失敗:", error);
+                        alert("刪除失敗！");
+                    }
+                }
+            };
+
             const handleSavePrice = async (e) => {
                 e.preventDefault();
                 if(!priceModal.model || !priceModal.price || !priceModal.reason) return alert("請填寫完整必填資訊與變更原因");
@@ -332,7 +375,6 @@
                 }
             };
 
-            // --- 拖曳排序相關邏輯 ---
             const handleDragStart = (e, id) => {
                 setDraggedPriceId(id);
                 e.dataTransfer.effectAllowed = "move";
@@ -507,7 +549,6 @@
                         </div>
 
                         <div className="bg-white rounded-xl shadow-sm border p-5">
-                            {/* 頂部搜尋與新增區塊 */}
                             <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4 border-b border-gray-100 pb-4">
                                 <div className="flex w-full md:w-auto gap-2">
                                     <select value={priceSearch.vendor} onChange={e => setPriceSearch({...priceSearch, vendor: e.target.value})} className="border border-gray-300 rounded px-3 py-2 text-sm focus:ring-1 focus:ring-blue-500 outline-none">
@@ -525,12 +566,10 @@
                                 </button>
                             </div>
 
-                            {/* 依廠商分區顯示資料 */}
                             {Object.keys(groupedPrices).length === 0 ? (
                                 <div className="p-8 text-center text-gray-400">目前尚無任何單價資料。</div>
                             ) : (
                                 Object.keys(groupedPrices).map(vendor => {
-                                    // 依據搜尋條件過濾當前群組的資料
                                     const filteredGroup = groupedPrices[vendor].filter(p => {
                                         if (priceSearch.vendor && vendor !== priceSearch.vendor) return false;
                                         if (priceSearch.model) {
@@ -544,12 +583,10 @@
 
                                     if (filteredGroup.length === 0) return null;
 
-                                    // 如果有輸入型號搜尋，暫時鎖定拖曳功能，避免陣列 index 錯亂
                                     const isDraggable = priceSearch.model.trim() === '';
 
                                     return (
                                         <div key={vendor} className="mb-8 border border-gray-200 rounded-lg overflow-hidden shadow-sm">
-                                            {/* 廠商標題列 */}
                                             <div className="bg-gray-100 px-4 py-3 border-b border-gray-200 flex justify-between items-center">
                                                 <h3 className="font-bold text-gray-800"><i className="fas fa-building text-gray-500 mr-2"></i>{vendor}</h3>
                                                 <span className="text-xs text-gray-500 font-medium">{filteredGroup.length} 款機型</span>
@@ -797,7 +834,6 @@
                                     {formData.items.map((item, index) => {
                                         return (
                                             <div key={index} className="flex gap-2 mb-2 items-start flex-wrap sm:flex-nowrap min-w-max sm:min-w-0 pb-2 border-b sm:border-0 last:border-0">
-                                                {/* 精機型號與價格群組 */}
                                                 <div className="flex flex-col gap-1 w-full sm:w-48 shrink-0">
                                                     <input type="text" list="price-models" placeholder="精機型號 (可快選)" value={item.model} 
                                                         onChange={e => {
@@ -882,24 +918,57 @@
                                                     <td colSpan="7" className="p-0">
                                                         <div className="p-6 flex flex-col md:flex-row gap-6 shadow-inner">
                                                             <div className="flex-1 overflow-x-auto">
-                                                                <div className="flex justify-between items-center mb-3 border-b pb-2">
-                                                                    <h4 className="font-bold">採購明細 (紀錄儲存當時的價格)</h4>
+                                                                
+                                                                {/* 展開後的標題列與操作按鈕 */}
+                                                                <div className="flex justify-between items-center mb-3 border-b pb-2 flex-wrap gap-2">
+                                                                    <h4 className="font-bold text-gray-800">單據與明細管理</h4>
                                                                     {isAdmin && (
-                                                                        editingItems.orderId === order.dbId ? (
-                                                                            <div className="flex gap-2">
-                                                                                <button onClick={saveEditedItems} className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded font-bold"><i className="fas fa-save mr-1"></i>儲存(自動計費)</button>
-                                                                                <button onClick={() => setEditingItems({orderId:null, items:[]})} className="text-xs bg-gray-200 px-2 py-1 rounded"><i className="fas fa-times mr-1"></i>取消</button>
-                                                                            </div>
-                                                                        ) : (
-                                                                            <button onClick={() => setEditingItems({orderId:order.dbId, items:JSON.parse(JSON.stringify(order.items||[]))})} className="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded font-bold"><i className="fas fa-edit mr-1"></i>編輯明細</button>
-                                                                        )
+                                                                        <div className="flex gap-2 flex-wrap justify-end">
+                                                                            {/* 編輯採購單基本資訊 */}
+                                                                            {editingHeader.id === order.dbId ? null : (
+                                                                                <button onClick={() => setEditingHeader({id: order.dbId, displayId: order.displayId, vendor: order.vendor, orderDate: order.orderDate, deliveryDate: order.deliveryDate})} className="text-xs bg-yellow-50 text-yellow-700 px-2 py-1 rounded font-bold border border-yellow-200 hover:bg-yellow-100 transition-colors"><i className="fas fa-edit mr-1"></i>編輯採購單</button>
+                                                                            )}
+                                                                            
+                                                                            {/* 編輯明細 */}
+                                                                            {editingItems.orderId === order.dbId ? (
+                                                                                <div className="flex gap-2">
+                                                                                    <button onClick={saveEditedItems} className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded font-bold hover:bg-green-200 transition-colors"><i className="fas fa-save mr-1"></i>儲存明細</button>
+                                                                                    <button onClick={() => setEditingItems({orderId:null, items:[]})} className="text-xs bg-gray-200 px-2 py-1 rounded hover:bg-gray-300 transition-colors"><i className="fas fa-times mr-1"></i>取消</button>
+                                                                                </div>
+                                                                            ) : (
+                                                                                <button onClick={() => setEditingItems({orderId:order.dbId, items:JSON.parse(JSON.stringify(order.items||[]))})} className="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded font-bold border border-blue-200 hover:bg-blue-100 transition-colors"><i className="fas fa-list mr-1"></i>編輯明細</button>
+                                                                            )}
+                                                                            
+                                                                            {/* 刪除整張採購單 */}
+                                                                            <button onClick={() => handleDeleteOrder(order.dbId)} className="text-xs bg-red-50 text-red-600 px-2 py-1 rounded font-bold border border-red-200 hover:bg-red-100 transition-colors"><i className="fas fa-trash mr-1"></i>刪除採購單</button>
+                                                                        </div>
                                                                     )}
                                                                 </div>
+
+                                                                {/* 編輯採購單標頭區塊 */}
+                                                                {editingHeader.id === order.dbId && (
+                                                                    <div className="bg-yellow-50 p-3 rounded-lg mb-4 border border-yellow-200 shadow-sm">
+                                                                        <h5 className="text-xs font-bold text-yellow-800 mb-2">編輯採購單基本資訊</h5>
+                                                                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 mb-2">
+                                                                            <input type="text" value={editingHeader.displayId} onChange={e => setEditingHeader({...editingHeader, displayId: e.target.value})} placeholder="訂單編號" className="border p-1.5 text-sm rounded outline-none focus:ring-1 focus:ring-yellow-500" />
+                                                                            <select value={editingHeader.vendor} onChange={e => setEditingHeader({...editingHeader, vendor: e.target.value})} className="border p-1.5 text-sm rounded outline-none focus:ring-1 focus:ring-yellow-500 bg-white">
+                                                                                <option value="">請選擇供應商...</option>
+                                                                                {vendors.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
+                                                                            </select>
+                                                                            <input type="date" value={editingHeader.orderDate} onChange={e => setEditingHeader({...editingHeader, orderDate: e.target.value})} className="border p-1.5 text-sm rounded outline-none focus:ring-1 focus:ring-yellow-500" />
+                                                                            <input type="date" value={editingHeader.deliveryDate} onChange={e => setEditingHeader({...editingHeader, deliveryDate: e.target.value})} className="border p-1.5 text-sm rounded outline-none focus:ring-1 focus:ring-yellow-500" />
+                                                                        </div>
+                                                                        <div className="flex gap-2 justify-end">
+                                                                            <button onClick={() => setEditingHeader({id: null, displayId: '', vendor: '', orderDate: '', deliveryDate: ''})} className="bg-gray-200 hover:bg-gray-300 text-gray-700 text-xs px-3 py-1.5 rounded font-bold transition-colors">取消</button>
+                                                                            <button onClick={saveEditedHeader} className="bg-yellow-500 hover:bg-yellow-600 text-white text-xs px-3 py-1.5 rounded font-bold transition-colors">儲存變更</button>
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+
                                                                 {editingItems.orderId === order.dbId ? (
                                                                     <div className="space-y-2">
                                                                         {editingItems.items.map((item, idx) => (
                                                                             <div key={idx} className="flex gap-2 mb-2 items-start flex-wrap sm:flex-nowrap min-w-max sm:min-w-0 pb-2 border-b sm:border-0 last:border-0">
-                                                                                {/* 編輯狀態：精機型號與價格群組 */}
                                                                                 <div className="flex flex-col gap-1 w-full sm:w-48 shrink-0">
                                                                                     <input className="border p-1.5 text-sm w-full rounded outline-none focus:ring-1 focus:ring-blue-500" list="price-models" placeholder="精機型號" value={item.model} 
                                                                                         onChange={e=>{
@@ -940,6 +1009,13 @@
                                                                                     </div>
                                                                                 )}
                                                                                 <span className="flex-1 text-gray-500 ml-2 truncate text-sm" title={item.remark}>{item.remark || '-'}</span>
+                                                                                
+                                                                                {/* 新增：個別刪除明細的圖示 */}
+                                                                                {isAdmin && (
+                                                                                    <button onClick={() => handleDeleteItem(order, idx)} className="text-gray-400 hover:text-red-500 ml-2 p-1 transition-colors" title="刪除此明細">
+                                                                                        <i className="fas fa-trash-alt"></i>
+                                                                                    </button>
+                                                                                )}
                                                                             </li>
                                                                         ))}
                                                                     </ul>
