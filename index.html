@@ -13,27 +13,21 @@
     <link rel="apple-touch-icon" href="k-192.png">
     <link rel="shortcut icon" href="k-192.png" type="image/png">
     
-    <!-- Tailwind CSS (樣式) -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- FontAwesome (圖示) -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    <!-- React & ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     
-    <!-- Babel (讓瀏覽器看得懂 React JSX 語法) -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    <!-- Firebase SDK (Compat 舊版寫法，不包含 Storage) -->
     <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore-compat.js"></script>
 </head>
 <body class="bg-gray-50 text-gray-800 font-sans">
     
-    <!-- React 應用程式掛載點 -->
     <div id="root"></div>
 
     <script type="text/babel">
@@ -248,7 +242,7 @@
                         }
             
                         const usdVal = (item.priceUsd && item.priceUsd.toString().trim().toUpperCase() === 'N') ? 'N' : (item.priceUsd ? Number(item.priceUsd) : null);
-                        const newHistoryEntry = { date: new Date().toISOString(), price: rmbVal, priceUsd: usdVal, reason: priceModal.reason || '無' };
+                        const newHistoryEntry = { date: new Date().toISOString(), price: rmbVal, priceUsd: usdVal, reason: priceModal.reason || '編輯紀錄' };
             
                         const docRef = db.collection('po_prices').doc(priceModal.id);
                         batch.update(docRef, {
@@ -263,14 +257,14 @@
                             history: firebase.firestore.FieldValue.arrayUnion(newHistoryEntry)
                         });
                     } else {
-                        // 新增時，通常預設視為新單價，若為新增則強制檢查原因
-                        if (!priceModal.reason.trim()) return alert("請填寫「本次異動原因/說明」");
+                        // 新增時，不用強制檢查原因，若無填寫自動帶入 "新增機型"
+                        const defaultReason = priceModal.reason.trim() || '新增機型';
                         
                         priceModal.items.forEach((item, index) => {
                             if (!item.model.trim()) return;
                             const rmbVal = item.price.toString().trim().toUpperCase() === 'N' ? 'N' : Number(item.price);
                             const usdVal = (item.priceUsd && item.priceUsd.toString().trim().toUpperCase() === 'N') ? 'N' : (item.priceUsd ? Number(item.priceUsd) : null);
-                            const newHistoryEntry = { date: new Date().toISOString(), price: rmbVal, priceUsd: usdVal, reason: priceModal.reason };
+                            const newHistoryEntry = { date: new Date().toISOString(), price: rmbVal, priceUsd: usdVal, reason: defaultReason };
                             
                             const docRef = db.collection('po_prices').doc();
                             batch.set(docRef, {
@@ -294,23 +288,6 @@
                     alert("單價儲存失敗，請檢查網路！");
                 }
             };
-
-            // --- 修改表單中的異動原因輸入框 ---
-            // 在 priceModal.isOpen 的 form 內，找到 reason 欄位：
-            <div className="mt-4 pt-4 border-t">
-                {/* 這裡移除 required，將提示文字改為條件式呈現 */}
-                <label className="block text-xs font-bold mb-1 text-gray-600">
-                    本次異動原因 / 記錄備註 
-                    <span className="text-gray-400 font-normal"> (僅修改單價時需填寫)</span>
-                </label>
-                <input 
-                    type="text" 
-                    value={priceModal.reason} 
-                    placeholder="若修改單價，請務必填寫此處" 
-                    onChange={e => setPriceModal({...priceModal, reason: e.target.value})} 
-                    className="w-full border border-gray-200 p-2 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" 
-                />
-            </div>
 
             const handleDeletePriceItem = async (itemId) => {
                 if (window.confirm("確定要永久刪除此細項單價嗎？此動作無法復原！")) {
@@ -724,7 +701,6 @@
                                                         <th className="p-2 text-right w-24">單價(RMB)</th>
                                                         <th className="p-2 text-right w-24 border-l">單價(USD)</th>
                                                         <th className="p-2 w-40">描述</th>
-                                                        {/* 加寬操作欄位以容納三顆按鈕 */}
                                                         <th className="p-2 text-center w-48">操作</th>
                                                     </tr>
                                                 </thead>
@@ -790,7 +766,6 @@
                                                                                         
                                                                                         <button onClick={() => setHistoryModal({ isOpen: true, model: p.model, history: p.history || [] })} className="text-gray-500 hover:text-gray-800 mx-1 bg-white border px-2 py-1 rounded shadow-sm text-xs" title="歷史紀錄"><i className="fas fa-history mr-1"></i>紀錄</button>
 
-                                                                                        {/* 新增刪除按鈕 */}
                                                                                         <button onClick={() => handleDeletePriceItem(p.id)} className="text-red-500 hover:text-red-700 mx-1 bg-red-50 border border-red-100 px-2 py-1 rounded shadow-sm text-xs" title="刪除此細項"><i className="fas fa-trash-alt mr-1"></i>刪除</button>
                                                                                     </td>
                                                                                 </tr>
@@ -883,8 +858,13 @@
                                         </div>
 
                                         <div className="mt-4 pt-4 border-t">
-                                            <label className="block text-xs font-bold mb-1 text-red-600">本次異動原因 / 記錄備註 <span className="text-red-500">*必填</span></label>
-                                            <input type="text" value={priceModal.reason} placeholder="例如：新機型建立 / 年度調漲" onChange={e => setPriceModal({...priceModal, reason: e.target.value})} className="w-full border border-red-200 p-2 rounded text-sm outline-none" required />
+                                            <label className="block text-xs font-bold mb-1 text-gray-700">
+                                                本次異動原因 / 記錄備註 
+                                                <span className="text-gray-500 font-normal ml-1">
+                                                    {priceModal.id ? '(僅更改單價時必填)' : '(新增機型不需填寫)'}
+                                                </span>
+                                            </label>
+                                            <input type="text" value={priceModal.reason} placeholder="若修改單價，請務必填寫此處" onChange={e => setPriceModal({...priceModal, reason: e.target.value})} className="w-full border border-gray-300 p-2 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" />
                                         </div>
 
                                         <div className="flex gap-2 mt-6">
