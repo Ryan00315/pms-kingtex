@@ -241,23 +241,19 @@
                         existingGroupSortIndex = existingItem.groupSortIndex;
                     }
 
+                    // --- 修正後的比對邏輯 ---
                     if (priceModal.id) {
                         const item = priceModal.items[0];
-                        // 從原始資料陣列中取出這筆資料原本的價格
                         const originalPriceRecord = prices.find(p => p.id === priceModal.id);
-                        const oldPrice = originalPriceRecord ? originalPriceRecord.price : null;
                         
-                        // 處理輸入的新價格 (去除空格、轉大寫比對)
-                        const rawNewPrice = item.price.toString().trim();
-                        const rmbVal = rawNewPrice.toUpperCase() === 'N' ? 'N' : Number(rawNewPrice);
+                        // 將資料庫的舊價格強制轉為字串
+                        const oldPriceStr = originalPriceRecord ? String(originalPriceRecord.price) : "";
+                        // 將輸入框的新價格強制轉為字串
+                        const newPriceStr = item.price.toString().trim();
                         
-                        // --- 核心修改：只比較單價(RMB) ---
-                        // 1. 如果原始價格存在且不等於新價格，且原因為空 -> 報錯
-                        // 2. 注意：oldPrice 可能是數字也可能是 "N"，所以要用字串比較來涵蓋這兩種情況
-                        const isPriceChanged = (String(oldPrice) !== String(rmbVal));
-                        
-                        if (isPriceChanged && !priceModal.reason.trim()) {
-                            return alert("偵測到單價(RMB)已變更，請填寫「本次異動原因」！");
+                        // 只有在「兩者字串內容不同」且「原因為空」時才阻擋
+                        if (oldPriceStr !== newPriceStr && !priceModal.reason.trim()) {
+                            return alert("偵測到單價(RMB)已變更，請務必填寫「本次異動原因」！");
                         }
 
                         const usdVal = (item.priceUsd && item.priceUsd.toString().trim().toUpperCase() === 'N') ? 'N' : (item.priceUsd ? Number(item.priceUsd) : null);
