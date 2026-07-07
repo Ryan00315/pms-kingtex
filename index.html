@@ -226,30 +226,37 @@
                 }
             };
 
-            // --- 修改後的 handleSavePrice 函式 ---
             const handleSavePrice = async (e) => {
                 e.preventDefault();
                 const finalCategory = priceModal.category === '新增' ? priceModal.customCategory.trim() : priceModal.category;
                 if (!finalCategory) return alert("請選擇或輸入分類");
                 if (!priceModal.mainModel.trim()) return alert("請填寫主型號");
-            
+
                 try {
                     const batch = db.batch();
                     
+                    let existingGroupSortIndex = 9999;
+                    const existingItem = prices.find(p => p.vendor === priceModal.vendor && p.category === finalCategory && p.mainModel === priceModal.mainModel.trim());
+                    if (existingItem && existingItem.groupSortIndex !== undefined) {
+                        existingGroupSortIndex = existingItem.groupSortIndex;
+                    }
+
                     if (priceModal.id) {
                         const item = priceModal.items[0];
                         const oldPrice = prices.find(p => p.id === priceModal.id)?.price;
                         const rmbVal = item.price.toString().trim().toUpperCase() === 'N' ? 'N' : Number(item.price);
                         
-                        // --- 核心邏輯：檢查單價是否變更 ---
-                        const isPriceChanged = (rmbVal !== oldPrice);
+                        // 檢查：只有當單價與舊值不同，且沒有填寫原因時，才強制阻擋
+                        const isPriceChanged = (rmbVal !== oldPrice && oldPrice !== undefined);
                         if (isPriceChanged && !priceModal.reason.trim()) {
-                            return alert("單價已變更，請務必填寫「本次異動原因」！");
+                            return alert("單價已變更，請填寫「本次異動原因」！");
                         }
-            
+
                         const usdVal = (item.priceUsd && item.priceUsd.toString().trim().toUpperCase() === 'N') ? 'N' : (item.priceUsd ? Number(item.priceUsd) : null);
-                        const newHistoryEntry = { date: new Date().toISOString(), price: rmbVal, priceUsd: usdVal, reason: priceModal.reason || '無' };
-            
+                        // 若無填寫原因，補上預設文字
+                        const reason = priceModal.reason.trim() || "更新機型資訊";
+                        const newHistoryEntry = { date: new Date().toISOString(), price: rmbVal, priceUsd: usdVal, reason: reason };
+
                         const docRef = db.collection('po_prices').doc(priceModal.id);
                         batch.update(docRef, {
                             vendor: priceModal.vendor,
@@ -260,17 +267,18 @@
                             price: rmbVal,
                             priceUsd: usdVal,
                             remark: item.remark || '',
+                            groupSortIndex: existingGroupSortIndex,
                             history: firebase.firestore.FieldValue.arrayUnion(newHistoryEntry)
                         });
                     } else {
-                        // 新增時，通常預設視為新單價，若為新增則強制檢查原因
-                        if (!priceModal.reason.trim()) return alert("請填寫「本次異動原因/說明」");
+                        // 新增模式：如果不填原因，預設為 "建立新機型"
+                        const reason = priceModal.reason.trim() || "建立新機型";
                         
                         priceModal.items.forEach((item, index) => {
                             if (!item.model.trim()) return;
                             const rmbVal = item.price.toString().trim().toUpperCase() === 'N' ? 'N' : Number(item.price);
                             const usdVal = (item.priceUsd && item.priceUsd.toString().trim().toUpperCase() === 'N') ? 'N' : (item.priceUsd ? Number(item.priceUsd) : null);
-                            const newHistoryEntry = { date: new Date().toISOString(), price: rmbVal, priceUsd: usdVal, reason: priceModal.reason };
+                            const newHistoryEntry = { date: new Date().toISOString(), price: rmbVal, priceUsd: usdVal, reason: reason };
                             
                             const docRef = db.collection('po_prices').doc();
                             batch.set(docRef, {
@@ -283,6 +291,7 @@
                                 priceUsd: usdVal,
                                 remark: item.remark || '',
                                 sortIndex: 9999 + index,
+                                groupSortIndex: existingGroupSortIndex,
                                 history: [newHistoryEntry]
                             });
                         });
@@ -294,7 +303,6 @@
                     alert("單價儲存失敗，請檢查網路！");
                 }
             };
-
             // --- 修改表單中的異動原因輸入框 ---
             // 在 priceModal.isOpen 的 form 內，找到 reason 欄位：
             <div className="mt-4 pt-4 border-t">
