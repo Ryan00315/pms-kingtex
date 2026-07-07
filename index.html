@@ -227,85 +227,90 @@
             };
 
             // --- 修改後的 handleSavePrice 函式 ---
-const handleSavePrice = async (e) => {
-    e.preventDefault();
-    const finalCategory = priceModal.category === '新增' ? priceModal.customCategory.trim() : priceModal.category;
-    if (!finalCategory) return alert("請選擇或輸入分類");
-    if (!priceModal.mainModel.trim()) return alert("請填寫主型號");
-
-    try {
-        const batch = db.batch();
-        let existingGroupSortIndex = 9999;
-        const existingItem = prices.find(p => p.vendor === priceModal.vendor && p.category === finalCategory && p.mainModel === priceModal.mainModel.trim());
-        if (existingItem && existingItem.groupSortIndex !== undefined) {
-            existingGroupSortIndex = existingItem.groupSortIndex;
-        }
-
-        if (priceModal.id) {
-            const item = priceModal.items[0];
-            const oldPrice = prices.find(p => p.id === priceModal.id)?.price;
-            const rmbVal = item.price.toString().trim().toUpperCase() === 'N' ? 'N' : Number(item.price);
-            const usdVal = (item.priceUsd && item.priceUsd.toString().trim().toUpperCase() === 'N') ? 'N' : (item.priceUsd ? Number(item.priceUsd) : null);
+            const handleSavePrice = async (e) => {
+                e.preventDefault();
+                const finalCategory = priceModal.category === '新增' ? priceModal.customCategory.trim() : priceModal.category;
+                if (!finalCategory) return alert("請選擇或輸入分類");
+                if (!priceModal.mainModel.trim()) return alert("請填寫主型號");
             
-            // 判斷單價是否變更
-            const priceChanged = (rmbVal !== oldPrice);
-            // 若有變更但沒寫原因，給予預設值
-            const reason = priceModal.reason.trim() || (priceChanged ? "單價異動" : "更新機型資訊");
+                try {
+                    const batch = db.batch();
+                    
+                    if (priceModal.id) {
+                        const item = priceModal.items[0];
+                        const oldPrice = prices.find(p => p.id === priceModal.id)?.price;
+                        const rmbVal = item.price.toString().trim().toUpperCase() === 'N' ? 'N' : Number(item.price);
+                        
+                        // --- 核心邏輯：檢查單價是否變更 ---
+                        const isPriceChanged = (rmbVal !== oldPrice);
+                        if (isPriceChanged && !priceModal.reason.trim()) {
+                            return alert("單價已變更，請務必填寫「本次異動原因」！");
+                        }
+            
+                        const usdVal = (item.priceUsd && item.priceUsd.toString().trim().toUpperCase() === 'N') ? 'N' : (item.priceUsd ? Number(item.priceUsd) : null);
+                        const newHistoryEntry = { date: new Date().toISOString(), price: rmbVal, priceUsd: usdVal, reason: priceModal.reason || '無' };
+            
+                        const docRef = db.collection('po_prices').doc(priceModal.id);
+                        batch.update(docRef, {
+                            vendor: priceModal.vendor,
+                            category: finalCategory,
+                            mainModel: priceModal.mainModel.trim(),
+                            model: item.model,
+                            vendorModel: item.vendorModel || '',
+                            price: rmbVal,
+                            priceUsd: usdVal,
+                            remark: item.remark || '',
+                            history: firebase.firestore.FieldValue.arrayUnion(newHistoryEntry)
+                        });
+                    } else {
+                        // 新增時，通常預設視為新單價，若為新增則強制檢查原因
+                        if (!priceModal.reason.trim()) return alert("請填寫「本次異動原因/說明」");
+                        
+                        priceModal.items.forEach((item, index) => {
+                            if (!item.model.trim()) return;
+                            const rmbVal = item.price.toString().trim().toUpperCase() === 'N' ? 'N' : Number(item.price);
+                            const usdVal = (item.priceUsd && item.priceUsd.toString().trim().toUpperCase() === 'N') ? 'N' : (item.priceUsd ? Number(item.priceUsd) : null);
+                            const newHistoryEntry = { date: new Date().toISOString(), price: rmbVal, priceUsd: usdVal, reason: priceModal.reason };
+                            
+                            const docRef = db.collection('po_prices').doc();
+                            batch.set(docRef, {
+                                vendor: priceModal.vendor,
+                                category: finalCategory,
+                                mainModel: priceModal.mainModel.trim(),
+                                model: item.model,
+                                vendorModel: item.vendorModel || '',
+                                price: rmbVal,
+                                priceUsd: usdVal,
+                                remark: item.remark || '',
+                                sortIndex: 9999 + index,
+                                history: [newHistoryEntry]
+                            });
+                        });
+                    }
+                    await batch.commit();
+                    setPriceModal({ isOpen: false, id: null, vendor: '', category: '平縫', customCategory: '', mainModel: '', items: [{ model: '', vendorModel: '', price: '', priceUsd: '', remark: '' }], reason: '' });
+                } catch (error) {
+                    console.error(error);
+                    alert("單價儲存失敗，請檢查網路！");
+                }
+            };
 
-            const newHistoryEntry = { date: new Date().toISOString(), price: rmbVal, priceUsd: usdVal, reason: reason };
-
-            const docRef = db.collection('po_prices').doc(priceModal.id);
-            batch.update(docRef, {
-                vendor: priceModal.vendor,
-                category: finalCategory,
-                mainModel: priceModal.mainModel.trim(),
-                model: item.model,
-                vendorModel: item.vendorModel || '',
-                price: rmbVal,
-                priceUsd: usdVal,
-                remark: item.remark || '',
-                groupSortIndex: existingGroupSortIndex,
-                history: firebase.firestore.FieldValue.arrayUnion(newHistoryEntry)
-            });
-        } else {
-            // 新增時，若沒填原因則預設為 "建立新機型"
-            const reason = priceModal.reason.trim() || "建立新機型";
-            priceModal.items.forEach((item, index) => {
-                if (!item.model.trim()) return;
-                const rmbVal = item.price.toString().trim().toUpperCase() === 'N' ? 'N' : Number(item.price);
-                const usdVal = (item.priceUsd && item.priceUsd.toString().trim().toUpperCase() === 'N') ? 'N' : (item.priceUsd ? Number(item.priceUsd) : null);
-                
-                const newHistoryEntry = { date: new Date().toISOString(), price: rmbVal, priceUsd: usdVal, reason: reason };
-                const docRef = db.collection('po_prices').doc();
-                batch.set(docRef, {
-                    vendor: priceModal.vendor,
-                    category: finalCategory,
-                    mainModel: priceModal.mainModel.trim(),
-                    model: item.model,
-                    vendorModel: item.vendorModel || '',
-                    price: rmbVal,
-                    priceUsd: usdVal,
-                    remark: item.remark || '',
-                    sortIndex: 9999 + index,
-                    groupSortIndex: existingGroupSortIndex,
-                    history: [newHistoryEntry]
-                });
-            });
-        }
-        await batch.commit();
-        setPriceModal({ isOpen: false, id: null, vendor: '', category: '平縫', customCategory: '', mainModel: '', items: [{ model: '', vendorModel: '', price: '', priceUsd: '', remark: '' }], reason: '' });
-    } catch (error) {
-        console.error(error);
-        alert("單價儲存失敗，請檢查網路！");
-    }
-};
-
-// --- 修改表單中的異動原因輸入框 ---
-// 在 priceModal.isOpen 的 form 內，找到 reason 欄位：
-<div className="mt-4 pt-4 border-t">
-    <label className="block text-xs font-bold mb-1 text-gray-600">本次異動原因 / 記錄備註 <span className="text-gray-400 font-normal">(選填)</span></label>
-    <input type="text" value={priceModal.reason} placeholder="例如：年度調漲 (僅在修改單價時建議填寫)" onChange={e => setPriceModal({...priceModal, reason: e.target.value})} className="w-full border border-gray-200 p-2 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" />
-</div>
+            // --- 修改表單中的異動原因輸入框 ---
+            // 在 priceModal.isOpen 的 form 內，找到 reason 欄位：
+            <div className="mt-4 pt-4 border-t">
+                {/* 這裡移除 required，將提示文字改為條件式呈現 */}
+                <label className="block text-xs font-bold mb-1 text-gray-600">
+                    本次異動原因 / 記錄備註 
+                    <span className="text-gray-400 font-normal"> (僅修改單價時需填寫)</span>
+                </label>
+                <input 
+                    type="text" 
+                    value={priceModal.reason} 
+                    placeholder="若修改單價，請務必填寫此處" 
+                    onChange={e => setPriceModal({...priceModal, reason: e.target.value})} 
+                    className="w-full border border-gray-200 p-2 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" 
+                />
+            </div>
 
             const handleDeletePriceItem = async (itemId) => {
                 if (window.confirm("確定要永久刪除此細項單價嗎？此動作無法復原！")) {
