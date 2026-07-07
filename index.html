@@ -707,7 +707,7 @@
                                                 <thead className="bg-white text-xs text-gray-500 border-b">
                                                     <tr>
                                                         <th className="p-2 w-12"></th>
-                                                        <th className="p-2 w-96">精機型號 / 細項</th>
+                                                        <th className="p-2 w-90">精機型號 / 細項</th>
                                                         <th className="p-2 w-40">廠商型號</th>
                                                         <th className="p-2 text-right w-24">單價(RMB)</th>
                                                         <th className="p-2 text-right w-24 border-l">單價(USD)</th>
@@ -763,7 +763,7 @@
                                                                                     <td className="p-2 text-center text-gray-300" title={isDraggable ? "拖曳以排序細項" : "搜尋時無法拖曳排序"}>
                                                                                         <i className={`fas fa-grip-vertical ml-4 ${isDraggable ? 'cursor-grab hover:text-gray-500' : 'cursor-not-allowed opacity-50'}`}></i>
                                                                                     </td>
-                                                                                    <td className="p-2 font-bold text-gray-800 w-96"><i className="fas fa-level-up-alt fa-rotate-90 text-gray-300 mr-2"></i>{p.model}</td>
+                                                                                    <td className="p-2 font-bold text-gray-800 w-90"><i className="fas fa-level-up-alt fa-rotate-90 text-gray-300 mr-2"></i>{p.model}</td>
                                                                                     <td className="p-2 text-gray-600">{p.vendorModel || '-'}</td>
                                                                                     <td className="p-2 text-right pr-2 font-bold text-blue-700">{formatRMB(p.price)}</td>
                                                                                     <td className="p-2 text-right pr-2 text-gray-500 border-l">{formatUSD(p.priceUsd)}</td>
