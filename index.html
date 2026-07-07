@@ -13,21 +13,27 @@
     <link rel="apple-touch-icon" href="k-192.png">
     <link rel="shortcut icon" href="k-192.png" type="image/png">
     
+    <!-- Tailwind CSS (樣式) -->
     <script src="https://cdn.tailwindcss.com"></script>
     
+    <!-- FontAwesome (圖示) -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
+    <!-- React & ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     
+    <!-- Babel (讓瀏覽器看得懂 React JSX 語法) -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
+    <!-- Firebase SDK (Compat 舊版寫法，不包含 Storage) -->
     <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore-compat.js"></script>
 </head>
 <body class="bg-gray-50 text-gray-800 font-sans">
     
+    <!-- React 應用程式掛載點 -->
     <div id="root"></div>
 
     <script type="text/babel">
@@ -105,7 +111,7 @@
             
             // 拖曳狀態管理
             const [draggedPriceId, setDraggedPriceId] = useState(null);
-            const [draggedMainModel, setDraggedMainModel] = useState(null); // 用於記錄正在拖曳的主型號
+            const [draggedMainModel, setDraggedMainModel] = useState(null); 
 
             // 新增表單
             const initialFormState = {
@@ -229,7 +235,6 @@
                 try {
                     const batch = db.batch();
                     
-                    // 找出該主型號是否已存在，若有則繼承其 groupSortIndex，確保排序不會亂掉
                     let existingGroupSortIndex = 9999;
                     const existingItem = prices.find(p => p.vendor === priceModal.vendor && p.category === finalCategory && p.mainModel === priceModal.mainModel.trim());
                     if (existingItem && existingItem.groupSortIndex !== undefined) {
@@ -292,6 +297,17 @@
                 } catch (error) {
                     console.error(error);
                     alert("單價儲存失敗，請檢查網路！");
+                }
+            };
+
+            const handleDeletePriceItem = async (itemId) => {
+                if (window.confirm("確定要永久刪除此細項單價嗎？此動作無法復原！")) {
+                    try {
+                        await db.collection('po_prices').doc(itemId).delete();
+                    } catch (error) {
+                        console.error("刪除單價失敗:", error);
+                        alert("刪除失敗！請檢查網路連線。");
+                    }
                 }
             };
 
@@ -587,7 +603,7 @@
                         <div className="bg-white p-4 rounded-xl shadow-sm flex justify-between items-center border border-gray-200">
                             <h1 className="text-xl font-bold text-gray-900"><i className="fas fa-building text-indigo-600 mr-2"></i>供應商(廠商)管理中心</h1>
                             <button onClick={() => setCurrentView('PO_LIST')} className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg text-sm font-bold hover:bg-gray-200">
-                                <i className="fas fa-arrow-left mr-2"></i>返回採採購單
+                                <i className="fas fa-arrow-left mr-2"></i>返回採購單
                             </button>
                         </div>
                         <div className="bg-white rounded-xl shadow-sm border p-5">
@@ -696,14 +712,14 @@
                                                         <th className="p-2 text-right w-24">單價(RMB)</th>
                                                         <th className="p-2 text-right w-24 border-l">單價(USD)</th>
                                                         <th className="p-2 w-40">描述</th>
-                                                        <th className="p-2 text-center w-36">操作</th>
+                                                        {/* 加寬操作欄位以容納三顆按鈕 */}
+                                                        <th className="p-2 text-center w-48">操作</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody className="divide-y divide-gray-100 text-sm bg-white">
                                                     {Object.keys(nestedPrices[vendor]).map(category => (
                                                         <React.Fragment key={category}>
                                                             <tr className="bg-gray-50"><td colSpan="7" className="p-2 font-bold text-pink-600 border-y shadow-inner"><i className="fas fa-folder mr-2 text-pink-500"></i>【{category}】</td></tr>
-                                                            {/* 幫主型號排序（依據群組索引 groupSortIndex） */}
                                                             {(() => {
                                                                 const sortedMainModels = Object.keys(nestedPrices[vendor][category]).sort((a, b) => {
                                                                     const idxA = nestedPrices[vendor][category][a][0]?.groupSortIndex ?? 9999;
@@ -713,9 +729,9 @@
 
                                                                 return sortedMainModels.map(mainModel => {
                                                                     const groupKey = `${vendor}-${category}-${mainModel}`;
-                                                                    const isExp = expandedPrices[groupKey] !== false; 
+                                                                    const isExp = expandedPrices[groupKey] === true || priceSearch.model.trim() !== ''; 
                                                                     const items = nestedPrices[vendor][category][mainModel];
-                                                                    const isDraggable = priceSearch.model.trim() === ''; // 沒有在搜尋狀態才允許拖曳
+                                                                    const isDraggable = priceSearch.model.trim() === ''; 
 
                                                                     return (
                                                                         <React.Fragment key={mainModel}>
@@ -728,7 +744,6 @@
                                                                                 className={`cursor-pointer transition-colors ${draggedMainModel?.mainModel === mainModel ? 'bg-blue-100' : 'hover:bg-gray-100'}`}
                                                                                 onClick={() => togglePriceExpand(groupKey)}
                                                                             >
-                                                                                {/* 在左側加入六個點的 Grip 拖曳圖示 */}
                                                                                 <td className="p-2 text-center text-gray-400" title={isDraggable ? "拖曳以排序主型號" : "搜尋時無法拖曳排序"}>
                                                                                     <i className={`fas fa-grip-vertical mr-2 ${isDraggable ? 'cursor-grab hover:text-gray-600' : 'opacity-30 cursor-not-allowed'}`}></i>
                                                                                     <i className={`fas fa-chevron-${isExp?'up':'down'}`}></i>
@@ -753,14 +768,18 @@
                                                                                     <td className="p-2 text-right pr-2 font-bold text-blue-700">{formatRMB(p.price)}</td>
                                                                                     <td className="p-2 text-right pr-2 text-gray-500 border-l">{formatUSD(p.priceUsd)}</td>
                                                                                     <td className="p-2 text-gray-500 text-xs truncate max-w-[120px]" title={p.remark}>{p.remark || '-'}</td>
-                                                                                    <td className="p-2 text-center">
+                                                                                    <td className="p-2 text-center whitespace-nowrap">
                                                                                         <button onClick={() => setPriceModal({ 
                                                                                             isOpen: true, id: p.id, vendor: p.vendor, 
                                                                                             category: p.category || '平縫', customCategory: '', mainModel: p.mainModel || '', 
                                                                                             items: [{ model: p.model, vendorModel: p.vendorModel || '', price: p.price, priceUsd: p.priceUsd || '', remark: p.remark || '' }], 
                                                                                             reason: '' 
                                                                                         })} className="text-blue-600 hover:text-blue-800 mx-1 bg-blue-50 border border-blue-100 px-2 py-1 rounded shadow-sm text-xs" title="修改"><i className="fas fa-edit mr-1"></i>編輯</button>
+                                                                                        
                                                                                         <button onClick={() => setHistoryModal({ isOpen: true, model: p.model, history: p.history || [] })} className="text-gray-500 hover:text-gray-800 mx-1 bg-white border px-2 py-1 rounded shadow-sm text-xs" title="歷史紀錄"><i className="fas fa-history mr-1"></i>紀錄</button>
+
+                                                                                        {/* 新增刪除按鈕 */}
+                                                                                        <button onClick={() => handleDeletePriceItem(p.id)} className="text-red-500 hover:text-red-700 mx-1 bg-red-50 border border-red-100 px-2 py-1 rounded shadow-sm text-xs" title="刪除此細項"><i className="fas fa-trash-alt mr-1"></i>刪除</button>
                                                                                     </td>
                                                                                 </tr>
                                                                             ))}
