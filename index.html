@@ -243,17 +243,24 @@
 
                     if (priceModal.id) {
                         const item = priceModal.items[0];
-                        const oldPrice = prices.find(p => p.id === priceModal.id)?.price;
-                        const rmbVal = item.price.toString().trim().toUpperCase() === 'N' ? 'N' : Number(item.price);
+                        // 從原始資料陣列中取出這筆資料原本的價格
+                        const originalPriceRecord = prices.find(p => p.id === priceModal.id);
+                        const oldPrice = originalPriceRecord ? originalPriceRecord.price : null;
                         
-                        // 檢查：只有當單價與舊值不同，且沒有填寫原因時，才強制阻擋
-                        const isPriceChanged = (rmbVal !== oldPrice && oldPrice !== undefined);
+                        // 處理輸入的新價格 (去除空格、轉大寫比對)
+                        const rawNewPrice = item.price.toString().trim();
+                        const rmbVal = rawNewPrice.toUpperCase() === 'N' ? 'N' : Number(rawNewPrice);
+                        
+                        // --- 核心修改：只比較單價(RMB) ---
+                        // 1. 如果原始價格存在且不等於新價格，且原因為空 -> 報錯
+                        // 2. 注意：oldPrice 可能是數字也可能是 "N"，所以要用字串比較來涵蓋這兩種情況
+                        const isPriceChanged = (String(oldPrice) !== String(rmbVal));
+                        
                         if (isPriceChanged && !priceModal.reason.trim()) {
-                            return alert("單價已變更，請填寫「本次異動原因」！");
+                            return alert("偵測到單價(RMB)已變更，請填寫「本次異動原因」！");
                         }
 
                         const usdVal = (item.priceUsd && item.priceUsd.toString().trim().toUpperCase() === 'N') ? 'N' : (item.priceUsd ? Number(item.priceUsd) : null);
-                        // 若無填寫原因，補上預設文字
                         const reason = priceModal.reason.trim() || "更新機型資訊";
                         const newHistoryEntry = { date: new Date().toISOString(), price: rmbVal, priceUsd: usdVal, reason: reason };
 
@@ -271,9 +278,8 @@
                             history: firebase.firestore.FieldValue.arrayUnion(newHistoryEntry)
                         });
                     } else {
-                        // 新增模式：如果不填原因，預設為 "建立新機型"
+                        // 新增時，給予預設原因，不再強制阻擋
                         const reason = priceModal.reason.trim() || "建立新機型";
-                        
                         priceModal.items.forEach((item, index) => {
                             if (!item.model.trim()) return;
                             const rmbVal = item.price.toString().trim().toUpperCase() === 'N' ? 'N' : Number(item.price);
