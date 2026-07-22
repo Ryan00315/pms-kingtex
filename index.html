@@ -322,7 +322,7 @@
                         vendor: formData.vendor || '', 
                         orderDate: formData.orderDate || '', 
                         deliveryDate: formData.deliveryDate || '',
-                        orderRemark: formData.orderRemark || '', // 儲存訂單備註
+                        orderRemark: formData.orderRemark || '', 
                         status: '處理中', 
                         amount: finalAmount || 0, 
                         items: itemsToSave, 
@@ -381,7 +381,7 @@
                         vendor: editingHeader.vendor,
                         orderDate: editingHeader.orderDate, 
                         deliveryDate: editingHeader.deliveryDate,
-                        orderRemark: editingHeader.orderRemark || '' // 更新時儲存訂單備註
+                        orderRemark: editingHeader.orderRemark || '' 
                     });
                     setEditingHeader({ id: null, displayId: '', vendor: '', orderDate: '', deliveryDate: '', orderRemark: '' });
                 } catch (error) {
@@ -1013,7 +1013,6 @@
                                     </div>
                                     <div><label className="block text-xs text-gray-700">訂單日期</label><input type="date" value={formData.orderDate} onChange={e => setFormData({...formData, orderDate: e.target.value})} className="w-full px-3 py-1.5 border rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" /></div>
                                     
-                                    {/* 預計交期 與 訂單備註 放在同一列 */}
                                     <div className="md:col-span-3 flex flex-col md:flex-row gap-3">
                                         <div className="w-full md:w-1/3">
                                             <label className="block text-xs font-bold mb-1 text-gray-700">預計交期 (無限制)</label>
@@ -1149,9 +1148,9 @@
                                                                 </div>
 
                                                                 {order.orderRemark && editingHeader.id !== order.dbId && (
-                                                                    <div className="mb-3 bg-gray-50 border border-gray-200 text-gray-700 text-sm px-3 py-2 rounded-lg">
-                                                                        <span className="font-bold mr-2"><i className="fas fa-sticky-note text-gray-400 mr-1"></i>訂單備註:</span>
-                                                                        {order.orderRemark}
+                                                                    <div className="mb-3 bg-white border border-orange-200 text-gray-700 text-sm px-3 py-2.5 rounded-lg shadow-sm">
+                                                                        <span className="font-bold text-orange-500 block mb-1"><i className="fas fa-sticky-note mr-1"></i>訂單備註：</span>
+                                                                        <span className="block whitespace-pre-wrap">{order.orderRemark}</span>
                                                                     </div>
                                                                 )}
 
@@ -1207,15 +1206,15 @@
                                                                     </div>
                                                                 ) : (
                                                                     <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm mt-2">
-                                                                        <table className="w-full text-left border-collapse min-w-[650px]">
+                                                                        <table className="w-full text-left border-collapse min-w-[720px]">
                                                                             <thead>
                                                                                 <tr className="bg-gray-100 text-xs font-semibold text-gray-600 border-b border-gray-200">
-                                                                                    <th className="py-2.5 px-3 w-44">精機型號</th>
-                                                                                    <th className="py-2.5 px-3 w-36">廠商型號</th>
-                                                                                    <th className="py-2.5 px-3 w-20 text-center">數量</th>
-                                                                                    {isAdmin && <th className="py-2.5 px-3 w-28 text-right">單價 (RMB)</th>}
-                                                                                    <th className="py-2.5 px-3 min-w-[120px] w-full">備註</th>
-                                                                                    {isAdmin && <th className="py-2.5 px-3 w-12 text-center">操作</th>}
+                                                                                    <th className="py-2.5 px-3 w-44 whitespace-nowrap">精機型號</th>
+                                                                                    <th className="py-2.5 px-3 w-48 whitespace-nowrap">廠商型號</th>
+                                                                                    <th className="py-2.5 px-3 w-20 text-center whitespace-nowrap">數量</th>
+                                                                                    {isAdmin && <th className="py-2.5 px-3 w-28 text-right whitespace-nowrap">單價 (RMB)</th>}
+                                                                                    <th className="py-2.5 px-3 min-w-[150px] w-full whitespace-nowrap">備註</th>
+                                                                                    {isAdmin && <th className="py-2.5 px-3 w-12 text-center whitespace-nowrap">操作</th>}
                                                                                 </tr>
                                                                             </thead>
                                                                             <tbody className="divide-y divide-gray-100 text-sm">
@@ -1224,7 +1223,7 @@
                                                                                         <td className="py-2 px-3 font-semibold text-gray-800 whitespace-nowrap overflow-hidden text-ellipsis max-w-[176px]" title={item.model}>
                                                                                             {item.model}
                                                                                         </td>
-                                                                                        <td className="py-2 px-3 text-gray-600 whitespace-nowrap overflow-hidden text-ellipsis max-w-[144px]" title={item.vendorModel}>
+                                                                                        <td className="py-2 px-3 text-gray-600 whitespace-nowrap overflow-hidden text-ellipsis max-w-[192px]" title={item.vendorModel}>
                                                                                             {item.vendorModel || '-'}
                                                                                         </td>
                                                                                         <td className="py-2 px-3 text-center whitespace-nowrap">
