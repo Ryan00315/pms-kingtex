@@ -77,7 +77,7 @@
             
             // 編輯狀態管理
             const [editingItems, setEditingItems] = useState({ orderId: null, items: [] });
-            const [editingHeader, setEditingHeader] = useState({ id: null, displayId: '', vendor: '', orderDate: '', deliveryDate: '' }); 
+            const [editingHeader, setEditingHeader] = useState({ id: null, displayId: '', vendor: '', orderDate: '', deliveryDate: '', orderRemark: '' }); 
             
             const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -109,7 +109,7 @@
 
             // 新增表單
             const initialFormState = {
-                displayId: '', vendor: '', orderDate: todayStr, deliveryDate: '',
+                displayId: '', vendor: '', orderDate: todayStr, deliveryDate: '', orderRemark: '',
                 items: [{ model: '', vendorModel: '', quantity: 1, unitPrice: '', unitPriceUsd: '', remark: '' }]
             };
             const [formData, setFormData] = useState(initialFormState);
@@ -322,6 +322,7 @@
                         vendor: formData.vendor || '', 
                         orderDate: formData.orderDate || '', 
                         deliveryDate: formData.deliveryDate || '',
+                        orderRemark: formData.orderRemark || '', // 儲存訂單備註
                         status: '處理中', 
                         amount: finalAmount || 0, 
                         items: itemsToSave, 
@@ -376,10 +377,13 @@
             const saveEditedHeader = async () => {
                 try {
                     await db.collection('po_orders').doc(editingHeader.id).update({
-                        displayId: editingHeader.displayId, vendor: editingHeader.vendor,
-                        orderDate: editingHeader.orderDate, deliveryDate: editingHeader.deliveryDate
+                        displayId: editingHeader.displayId, 
+                        vendor: editingHeader.vendor,
+                        orderDate: editingHeader.orderDate, 
+                        deliveryDate: editingHeader.deliveryDate,
+                        orderRemark: editingHeader.orderRemark || '' // 更新時儲存訂單備註
                     });
-                    setEditingHeader({ id: null, displayId: '', vendor: '', orderDate: '', deliveryDate: '' });
+                    setEditingHeader({ id: null, displayId: '', vendor: '', orderDate: '', deliveryDate: '', orderRemark: '' });
                 } catch (error) {
                     console.error("更新採購單資訊失敗:", error);
                     alert("更新失敗！");
@@ -1008,7 +1012,18 @@
                                         </select>
                                     </div>
                                     <div><label className="block text-xs text-gray-700">訂單日期</label><input type="date" value={formData.orderDate} onChange={e => setFormData({...formData, orderDate: e.target.value})} className="w-full px-3 py-1.5 border rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" /></div>
-                                    <div className="md:col-span-3"><label className="block text-xs font-bold mb-1 text-gray-700">預計交期 (無限制)</label><input type="date" value={formData.deliveryDate} onChange={e => setFormData({...formData, deliveryDate: e.target.value})} className="w-full md:w-1/3 px-3 py-1.5 border rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" /></div>
+                                    
+                                    {/* 預計交期 與 訂單備註 放在同一列 */}
+                                    <div className="md:col-span-3 flex flex-col md:flex-row gap-3">
+                                        <div className="w-full md:w-1/3">
+                                            <label className="block text-xs font-bold mb-1 text-gray-700">預計交期 (無限制)</label>
+                                            <input type="date" value={formData.deliveryDate} onChange={e => setFormData({...formData, deliveryDate: e.target.value})} className="w-full px-3 py-1.5 border rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" />
+                                        </div>
+                                        <div className="w-full md:w-2/3">
+                                            <label className="block text-xs font-bold mb-1 text-gray-700">訂單備註</label>
+                                            <input type="text" value={formData.orderRemark} onChange={e => setFormData({...formData, orderRemark: e.target.value})} placeholder="整筆訂單的備註事項..." className="w-full px-3 py-1.5 border rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" />
+                                        </div>
+                                    </div>
                                 </div>
                                 
                                 <div className="bg-gray-50 p-3 rounded border overflow-x-auto">
@@ -1109,13 +1124,13 @@
                                                                     {isAdmin && (
                                                                         <div className="flex items-center gap-4 flex-wrap justify-end">
                                                                             <div className="flex items-center bg-blue-50 px-3 py-1.5 border border-blue-200 rounded-lg shadow-sm">
-                                                                                <span className="text-xs text-blue-800 font-bold mr-2"><i className="fas fa-lock mr-1"></i>訂單總金額 (內部)</span>
+                                                                                <span className="text-xs text-blue-800 font-bold mr-2"><i className="fas fa-lock mr-1"></i>總金額 (內部)</span>
                                                                                 <span className="text-sm font-black text-blue-900">{formatRMB(order.amount)}</span>
                                                                             </div>
                                                                             
                                                                             <div className="flex gap-2 flex-wrap justify-end">
                                                                                 {editingHeader.id === order.dbId ? null : (
-                                                                                    <button onClick={() => setEditingHeader({id: order.dbId, displayId: order.displayId, vendor: order.vendor, orderDate: order.orderDate, deliveryDate: order.deliveryDate})} className="text-xs bg-yellow-50 text-yellow-700 px-2 py-1 rounded font-bold border border-yellow-200 hover:bg-yellow-100 transition-colors"><i className="fas fa-edit mr-1"></i>編輯採購單</button>
+                                                                                    <button onClick={() => setEditingHeader({id: order.dbId, displayId: order.displayId, vendor: order.vendor, orderDate: order.orderDate, deliveryDate: order.deliveryDate, orderRemark: order.orderRemark || ''})} className="text-xs bg-yellow-50 text-yellow-700 px-2 py-1 rounded font-bold border border-yellow-200 hover:bg-yellow-100 transition-colors"><i className="fas fa-edit mr-1"></i>編輯採購單</button>
                                                                                 )}
                                                                                 
                                                                                 {editingItems.orderId === order.dbId ? (
@@ -1133,6 +1148,13 @@
                                                                     )}
                                                                 </div>
 
+                                                                {order.orderRemark && editingHeader.id !== order.dbId && (
+                                                                    <div className="mb-3 bg-gray-50 border border-gray-200 text-gray-700 text-sm px-3 py-2 rounded-lg">
+                                                                        <span className="font-bold mr-2"><i className="fas fa-sticky-note text-gray-400 mr-1"></i>訂單備註:</span>
+                                                                        {order.orderRemark}
+                                                                    </div>
+                                                                )}
+
                                                                 {editingHeader.id === order.dbId && (
                                                                     <div className="bg-yellow-50 p-3 rounded-lg mb-4 border border-yellow-200 shadow-sm">
                                                                         <h5 className="text-xs font-bold text-yellow-800 mb-2">編輯採購單基本資訊</h5>
@@ -1145,8 +1167,9 @@
                                                                             <input type="date" value={editingHeader.orderDate} onChange={e => setEditingHeader({...editingHeader, orderDate: e.target.value})} className="border p-1.5 text-sm rounded outline-none focus:ring-1 focus:ring-yellow-500" />
                                                                             <input type="date" value={editingHeader.deliveryDate} onChange={e => setEditingHeader({...editingHeader, deliveryDate: e.target.value})} className="border p-1.5 text-sm rounded outline-none focus:ring-1 focus:ring-yellow-500" />
                                                                         </div>
+                                                                        <input type="text" value={editingHeader.orderRemark} onChange={e => setEditingHeader({...editingHeader, orderRemark: e.target.value})} placeholder="訂單備註" className="w-full mb-2 border p-1.5 text-sm rounded outline-none focus:ring-1 focus:ring-yellow-500" />
                                                                         <div className="flex gap-2 justify-end">
-                                                                            <button onClick={() => setEditingHeader({id: null, displayId: '', vendor: '', orderDate: '', deliveryDate: ''})} className="bg-gray-200 hover:bg-gray-300 text-gray-700 text-xs px-3 py-1.5 rounded font-bold transition-colors">取消</button>
+                                                                            <button onClick={() => setEditingHeader({id: null, displayId: '', vendor: '', orderDate: '', deliveryDate: '', orderRemark: ''})} className="bg-gray-200 hover:bg-gray-300 text-gray-700 text-xs px-3 py-1.5 rounded font-bold transition-colors">取消</button>
                                                                             <button onClick={saveEditedHeader} className="bg-yellow-500 hover:bg-yellow-600 text-white text-xs px-3 py-1.5 rounded font-bold transition-colors">儲存變更</button>
                                                                         </div>
                                                                     </div>
