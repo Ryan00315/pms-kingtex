@@ -220,7 +220,6 @@
                 }
             };
 
-            // --- 修改後的 handleSavePrice 函式 ---
             const handleSavePrice = async (e) => {
                 e.preventDefault();
                 const finalCategory = priceModal.category === '新增' ? priceModal.customCategory.trim() : priceModal.category;
@@ -235,7 +234,6 @@
                         const oldPrice = prices.find(p => p.id === priceModal.id)?.price;
                         const rmbVal = item.price.toString().trim().toUpperCase() === 'N' ? 'N' : Number(item.price);
                         
-                        // --- 核心邏輯：檢查單價是否變更 ---
                         const isPriceChanged = (rmbVal !== oldPrice);
                         if (isPriceChanged && !priceModal.reason.trim()) {
                             return alert("單價已變更，請務必填寫「本次異動原因」！");
@@ -257,7 +255,6 @@
                             history: firebase.firestore.FieldValue.arrayUnion(newHistoryEntry)
                         });
                     } else {
-                        // 新增時，不用強制檢查原因，若無填寫自動帶入 "新增機型"
                         const defaultReason = priceModal.reason.trim() || '新增機型';
                         
                         priceModal.items.forEach((item, index) => {
@@ -417,7 +414,6 @@
                 }
             };
 
-            // 細項的拖曳邏輯
             const handleDragStart = (e, id) => {
                 setDraggedPriceId(id);
                 e.dataTransfer.effectAllowed = "move";
@@ -458,7 +454,6 @@
                 setDraggedPriceId(null);
             };
 
-            // 主型號的拖曳邏輯
             const handleMainModelDragStart = (e, vendor, category, mainModel) => {
                 e.stopPropagation();
                 setDraggedMainModel({ vendor, category, mainModel });
@@ -478,14 +473,12 @@
                 e.stopPropagation();
 
                 if (!draggedMainModel) return;
-                // 只能在相同的廠商和分類下拖曳排序
                 if (draggedMainModel.vendor !== targetVendor || draggedMainModel.category !== targetCategory) return;
                 if (draggedMainModel.mainModel === targetMainModel) {
                     setDraggedMainModel(null);
                     return;
                 }
 
-                // 取得這個分類下目前所有的主型號陣列，並依照目前的 groupSortIndex 排序
                 const categoryGroups = nestedPrices[targetVendor][targetCategory];
                 const sortedKeys = Object.keys(categoryGroups).sort((a, b) => {
                     const idxA = categoryGroups[a][0]?.groupSortIndex ?? 9999;
@@ -497,13 +490,11 @@
                 const targetIdx = sortedKeys.indexOf(targetMainModel);
                 if (draggedIdx === -1 || targetIdx === -1) return;
 
-                // 重新排序陣列
                 sortedKeys.splice(draggedIdx, 1);
                 sortedKeys.splice(targetIdx, 0, draggedMainModel.mainModel);
 
                 try {
                     const batch = db.batch();
-                    // 迴圈跑新的主型號排序，把該主型號下所有的細項都更新為新的 groupSortIndex
                     sortedKeys.forEach((mm, index) => {
                         const itemsInMainModel = categoryGroups[mm];
                         itemsInMainModel.forEach(item => {
@@ -563,7 +554,6 @@
                 nestedPrices[v][c][mm].push(p);
             });
 
-            // 細項排序維持不變
             Object.keys(nestedPrices).forEach(v => {
                 Object.keys(nestedPrices[v]).forEach(c => {
                     Object.keys(nestedPrices[v][c]).forEach(mm => {
@@ -1186,77 +1176,63 @@
                                                                         <button onClick={() => setEditingItems({...editingItems, items: [...editingItems.items, {model:'', vendorModel:'', quantity:1, unitPrice:'', unitPriceUsd:'', remark:''}]})} className="text-xs text-blue-600 font-bold bg-blue-100 px-2 py-1 rounded hover:bg-blue-200 mt-2"><i className="fas fa-plus mr-1"></i>新增一列</button>
                                                                     </div>
                                                                 ) : (
-                                                                    {/* 改用可橫向滾動的表格結構，確保寬度固定、不撐爆頁面 */}
-                                                                                    ) : (
-                                            <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm mt-2">
-                                                {/* 改用可橫向滾動的表格結構，確保寬度固定、不撐爆頁面 */}
-                                                <table className="w-full text-left border-collapse min-w-[650px]">
-                                                    <thead>
-                                                        <tr className="bg-gray-100 text-xs font-semibold text-gray-600 border-b border-gray-200">
-                                                            <th className="py-2.5 px-3 w-44">精機型號</th>
-                                                            <th className="py-2.5 px-3 w-36">廠商型號</th>
-                                                            <th className="py-2.5 px-3 w-20 text-center">數量</th>
-                                                            {isAdmin && <th className="py-2.5 px-3 w-28 text-right">單價 (RMB)</th>}
-                                                            <th className="py-2.5 px-3 min-w-[120px]">備註</th>
-                                                            {isAdmin && <th className="py-2.5 px-3 w-12 text-center">操作</th>}
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody className="divide-y divide-gray-100 text-sm">
-                                                        {order.items?.map((item, idx) => (
-                                                            <tr key={idx} className="hover:bg-blue-50/50 transition-colors">
-                                                                {/* 精機型號 */}
-                                                                <td className="py-2 px-3 font-semibold text-gray-800 whitespace-nowrap overflow-hidden text-ellipsis max-w-[176px]" title={item.model}>
-                                                                    {item.model}
-                                                                </td>
-                                            
-                                                                {/* 廠商型號 */}
-                                                                <td className="py-2 px-3 text-gray-600 whitespace-nowrap overflow-hidden text-ellipsis max-w-[144px]" title={item.vendorModel}>
-                                                                    {item.vendorModel || '-'}
-                                                                </td>
-                                            
-                                                                {/* 數量 */}
-                                                                <td className="py-2 px-3 text-center whitespace-nowrap">
-                                                                    <span className="inline-block bg-gray-100 text-gray-700 font-bold px-2 py-0.5 rounded text-xs">
-                                                                        x {item.quantity}
-                                                                    </span>
-                                                                </td>
-                                            
-                                                                {/* 單價 (僅管理員顯示) */}
-                                                                {isAdmin && (
-                                                                    <td className="py-2 px-3 text-right whitespace-nowrap">
-                                                                        <span className="block font-bold text-blue-700 text-xs">
-                                                                            {formatRMB(item.unitPrice || 0)}
-                                                                        </span>
-                                                                        {item.unitPriceUsd ? (
-                                                                            <span className="block text-[10px] text-gray-400">
-                                                                                {formatUSD(item.unitPriceUsd)}
-                                                                            </span>
-                                                                        ) : null}
-                                                                    </td>
-                                                                )}
-                                            
-                                                                {/* 備註 */}
-                                                                <td className="py-2 px-3 text-gray-500 text-xs overflow-hidden text-ellipsis max-w-[200px]" title={item.remark}>
-                                                                    {item.remark || '-'}
-                                                                </td>
-                                            
-                                                                {/* 刪除按鈕 (僅管理員顯示) */}
-                                                                {isAdmin && (
-                                                                    <td className="py-2 px-3 text-center whitespace-nowrap">
-                                                                        <button 
-                                                                            onClick={() => handleDeleteItem(order, idx)} 
-                                                                            className="text-gray-400 hover:text-red-500 p-1 transition-colors" 
-                                                                            title="刪除此明細"
-                                                                        >
-                                                                            <i className="fas fa-trash-alt"></i>
-                                                                        </button>
-                                                                    </td>
-                                                                )}
-                                                            </tr>
-                                                        ))}
-                                                    </tbody>
-                                                </table>
-                                            </div>
+                                                                    <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm mt-2">
+                                                                        <table className="w-full text-left border-collapse min-w-[650px]">
+                                                                            <thead>
+                                                                                <tr className="bg-gray-100 text-xs font-semibold text-gray-600 border-b border-gray-200">
+                                                                                    <th className="py-2.5 px-3 w-44">精機型號</th>
+                                                                                    <th className="py-2.5 px-3 w-36">廠商型號</th>
+                                                                                    <th className="py-2.5 px-3 w-20 text-center">數量</th>
+                                                                                    {isAdmin && <th className="py-2.5 px-3 w-28 text-right">單價 (RMB)</th>}
+                                                                                    <th className="py-2.5 px-3 min-w-[120px]">備註</th>
+                                                                                    {isAdmin && <th className="py-2.5 px-3 w-12 text-center">操作</th>}
+                                                                                </tr>
+                                                                            </thead>
+                                                                            <tbody className="divide-y divide-gray-100 text-sm">
+                                                                                {order.items?.map((item, idx) => (
+                                                                                    <tr key={idx} className="hover:bg-blue-50/50 transition-colors">
+                                                                                        <td className="py-2 px-3 font-semibold text-gray-800 whitespace-nowrap overflow-hidden text-ellipsis max-w-[176px]" title={item.model}>
+                                                                                            {item.model}
+                                                                                        </td>
+                                                                                        <td className="py-2 px-3 text-gray-600 whitespace-nowrap overflow-hidden text-ellipsis max-w-[144px]" title={item.vendorModel}>
+                                                                                            {item.vendorModel || '-'}
+                                                                                        </td>
+                                                                                        <td className="py-2 px-3 text-center whitespace-nowrap">
+                                                                                            <span className="inline-block bg-gray-100 text-gray-700 font-bold px-2 py-0.5 rounded text-xs">
+                                                                                                x {item.quantity}
+                                                                                            </span>
+                                                                                        </td>
+                                                                                        {isAdmin && (
+                                                                                            <td className="py-2 px-3 text-right whitespace-nowrap">
+                                                                                                <span className="block font-bold text-blue-700 text-xs">
+                                                                                                    {formatRMB(item.unitPrice || 0)}
+                                                                                                </span>
+                                                                                                {item.unitPriceUsd ? (
+                                                                                                    <span className="block text-[10px] text-gray-400">
+                                                                                                        {formatUSD(item.unitPriceUsd)}
+                                                                                                    </span>
+                                                                                                ) : null}
+                                                                                            </td>
+                                                                                        )}
+                                                                                        <td className="py-2 px-3 text-gray-500 text-xs overflow-hidden text-ellipsis max-w-[200px]" title={item.remark}>
+                                                                                            {item.remark || '-'}
+                                                                                        </td>
+                                                                                        {isAdmin && (
+                                                                                            <td className="py-2 px-3 text-center whitespace-nowrap">
+                                                                                                <button 
+                                                                                                    onClick={() => handleDeleteItem(order, idx)} 
+                                                                                                    className="text-gray-400 hover:text-red-500 p-1 transition-colors" 
+                                                                                                    title="刪除此明細"
+                                                                                                >
+                                                                                                    <i className="fas fa-trash-alt"></i>
+                                                                                                </button>
+                                                                                            </td>
+                                                                                        )}
+                                                                                    </tr>
+                                                                                ))}
+                                                                            </tbody>
+                                                                        </table>
+                                                                    </div>
                                                                 )}
                                                             </div>
                                                             
