@@ -1187,27 +1187,55 @@
                                                                     </div>
                                                                 ) : (
                                                                     <ul className="space-y-2">
-                                                                        {order.items?.map((item, idx) => (
-                                                                            <li key={idx} className="flex bg-white p-2 border rounded shadow-sm items-center gap-2">
-                                                                                <span className="font-semibold w-1/4 truncate text-sm" title={item.model}>{item.model}</span>
-                                                                                <span className="text-gray-600 w-1/4 truncate text-sm" title={item.vendorModel}>{item.vendorModel || '-'}</span>
-                                                                                <span className="w-16 text-center bg-gray-100 rounded text-sm py-0.5 font-bold text-gray-700">x {item.quantity}</span>
-                                                                                {isAdmin && (
-                                                                                    <div className="flex flex-col text-right w-24 border-l pl-2 leading-tight">
-                                                                                        <span className="text-blue-700 text-xs font-bold">{formatRMB(item.unitPrice || 0)}</span>
-                                                                                        {item.unitPriceUsd && <span className="text-gray-500 text-[10px]">{formatUSD(item.unitPriceUsd)}</span>}
-                                                                                    </div>
-                                                                                )}
-                                                                                <span className="flex-1 text-gray-500 ml-2 truncate text-sm" title={item.remark}>{item.remark || '-'}</span>
-                                                                                
-                                                                                {isAdmin && (
-                                                                                    <button onClick={() => handleDeleteItem(order, idx)} className="text-gray-400 hover:text-red-500 ml-2 p-1 transition-colors" title="刪除此明細">
-                                                                                        <i className="fas fa-trash-alt"></i>
-                                                                                    </button>
-                                                                                )}
-                                                                            </li>
-                                                                        ))}
-                                                                    </ul>
+                                                                    {order.items?.map((item, idx) => (
+                                                                        <li key={idx} className="flex bg-white p-2.5 border rounded-lg shadow-sm items-center gap-3 text-sm">
+                                                                            {/* 1. 精機型號：固定寬度、超長不換行改顯示 ... */}
+                                                                            <div className="w-48 shrink-0 font-semibold text-gray-800 truncate" title={item.model}>
+                                                                                {item.model}
+                                                                            </div>
+                                                                
+                                                                            {/* 2. 廠商型號：固定寬度 */}
+                                                                            <div className="w-40 shrink-0 text-gray-600 truncate" title={item.vendorModel}>
+                                                                                {item.vendorModel || '-'}
+                                                                            </div>
+                                                                
+                                                                            {/* 3. 數量：固定寬度與對齊 */}
+                                                                            <div className="w-16 shrink-0 text-center bg-gray-100 rounded py-0.5 font-bold text-gray-700 whitespace-nowrap">
+                                                                                x {item.quantity}
+                                                                            </div>
+                                                                
+                                                                            {/* 4. 單價欄位（內部顯示）：固定寬度 + 強制不換行（解決 ¥0.00 折行問題） */}
+                                                                            {isAdmin && (
+                                                                                <div className="w-28 shrink-0 text-right border-l pl-3 leading-tight whitespace-nowrap">
+                                                                                    <span className="block text-blue-700 font-bold text-xs">
+                                                                                        {formatRMB(item.unitPrice || 0)}
+                                                                                    </span>
+                                                                                    {item.unitPriceUsd ? (
+                                                                                        <span className="block text-gray-400 text-[10px]">
+                                                                                            {formatUSD(item.unitPriceUsd)}
+                                                                                        </span>
+                                                                                    ) : null}
+                                                                                </div>
+                                                                            )}
+                                                                
+                                                                            {/* 5. 備註：填滿剩餘空間，超長自動切掉 */}
+                                                                            <div className="flex-1 min-w-0 text-gray-500 truncate" title={item.remark}>
+                                                                                {item.remark || '-'}
+                                                                            </div>
+                                                                
+                                                                            {/* 6. 刪除按鈕 */}
+                                                                            {isAdmin && (
+                                                                                <button 
+                                                                                    onClick={() => handleDeleteItem(order, idx)} 
+                                                                                    className="w-8 shrink-0 text-center text-gray-400 hover:text-red-500 p-1 transition-colors" 
+                                                                                    title="刪除此明細"
+                                                                                >
+                                                                                    <i className="fas fa-trash-alt"></i>
+                                                                                </button>
+                                                                            )}
+                                                                        </li>
+                                                                    ))}
+                                                                </ul>
                                                                 )}
                                                             </div>
                                                             
