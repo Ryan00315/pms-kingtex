@@ -1186,56 +1186,75 @@
                                                                         <button onClick={() => setEditingItems({...editingItems, items: [...editingItems.items, {model:'', vendorModel:'', quantity:1, unitPrice:'', unitPriceUsd:'', remark:''}]})} className="text-xs text-blue-600 font-bold bg-blue-100 px-2 py-1 rounded hover:bg-blue-200 mt-2"><i className="fas fa-plus mr-1"></i>新增一列</button>
                                                                     </div>
                                                                 ) : (
-                                                                    <ul className="space-y-2">
-                                                                    {order.items?.map((item, idx) => (
-                                                                        <li key={idx} className="flex bg-white p-2.5 border rounded-lg shadow-sm items-center gap-3 text-sm">
-                                                                            {/* 1. 精機型號：固定寬度、超長不換行改顯示 ... */}
-                                                                            <div className="w-48 shrink-0 font-semibold text-gray-800 truncate" title={item.model}>
-                                                                                {item.model}
-                                                                            </div>
-                                                                
-                                                                            {/* 2. 廠商型號：固定寬度 */}
-                                                                            <div className="w-40 shrink-0 text-gray-600 truncate" title={item.vendorModel}>
-                                                                                {item.vendorModel || '-'}
-                                                                            </div>
-                                                                
-                                                                            {/* 3. 數量：固定寬度與對齊 */}
-                                                                            <div className="w-16 shrink-0 text-center bg-gray-100 rounded py-0.5 font-bold text-gray-700 whitespace-nowrap">
-                                                                                x {item.quantity}
-                                                                            </div>
-                                                                
-                                                                            {/* 4. 單價欄位（內部顯示）：固定寬度 + 強制不換行（解決 ¥0.00 折行問題） */}
-                                                                            {isAdmin && (
-                                                                                <div className="w-28 shrink-0 text-right border-l pl-3 leading-tight whitespace-nowrap">
-                                                                                    <span className="block text-blue-700 font-bold text-xs">
-                                                                                        {formatRMB(item.unitPrice || 0)}
-                                                                                    </span>
-                                                                                    {item.unitPriceUsd ? (
-                                                                                        <span className="block text-gray-400 text-[10px]">
-                                                                                            {formatUSD(item.unitPriceUsd)}
-                                                                                        </span>
-                                                                                    ) : null}
-                                                                                </div>
-                                                                            )}
-                                                                
-                                                                            {/* 5. 備註：填滿剩餘空間，超長自動切掉 */}
-                                                                            <div className="flex-1 min-w-0 text-gray-500 truncate" title={item.remark}>
-                                                                                {item.remark || '-'}
-                                                                            </div>
-                                                                
-                                                                            {/* 6. 刪除按鈕 */}
-                                                                            {isAdmin && (
-                                                                                <button 
-                                                                                    onClick={() => handleDeleteItem(order, idx)} 
-                                                                                    className="w-8 shrink-0 text-center text-gray-400 hover:text-red-500 p-1 transition-colors" 
-                                                                                    title="刪除此明細"
-                                                                                >
-                                                                                    <i className="fas fa-trash-alt"></i>
-                                                                                </button>
-                                                                            )}
-                                                                        </li>
-                                                                    ))}
-                                                                </ul>
+                                                                    {/* 改用可橫向滾動的表格結構，確保寬度固定、不撐爆頁面 */}
+                                            <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm mt-2">
+                                                <table className="w-full text-left border-collapse min-w-[650px]">
+                                                    <thead>
+                                                        <tr className="bg-gray-100 text-xs font-semibold text-gray-600 border-b border-gray-200">
+                                                            <th className="py-2.5 px-3 w-44">精機型號</th>
+                                                            <th className="py-2.5 px-3 w-36">廠商型號</th>
+                                                            <th className="py-2.5 px-3 w-20 text-center">數量</th>
+                                                            {isAdmin && <th className="py-2.5 px-3 w-28 text-right">單價 (RMB)</th>}
+                                                            <th className="py-2.5 px-3 min-w-[120px]">備註</th>
+                                                            {isAdmin && <th className="py-2.5 px-3 w-12 text-center">操作</th>}
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-gray-100 text-sm">
+                                                        {order.items?.map((item, idx) => (
+                                                            <tr key={idx} className="hover:bg-blue-50/50 transition-colors">
+                                                                {/* 精機型號 */}
+                                                                <td className="py-2 px-3 font-semibold text-gray-800 whitespace-nowrap overflow-hidden text-ellipsis max-w-[176px]" title={item.model}>
+                                                                    {item.model}
+                                                                </td>
+                                            
+                                                                {/* 廠商型號 */}
+                                                                <td className="py-2 px-3 text-gray-600 whitespace-nowrap overflow-hidden text-ellipsis max-w-[144px]" title={item.vendorModel}>
+                                                                    {item.vendorModel || '-'}
+                                                                </td>
+                                            
+                                                                {/* 數量 */}
+                                                                <td className="py-2 px-3 text-center whitespace-nowrap">
+                                                                    <span className="inline-block bg-gray-100 text-gray-700 font-bold px-2 py-0.5 rounded text-xs">
+                                                                        x {item.quantity}
+                                                                    </span>
+                                                                </td>
+                                            
+                                                                {/* 單價 (僅管理員顯示) */}
+                                                                {isAdmin && (
+                                                                    <td className="py-2 px-3 text-right whitespace-nowrap">
+                                                                        <span className="block font-bold text-blue-700 text-xs">
+                                                                            {formatRMB(item.unitPrice || 0)}
+                                                                        </span>
+                                                                        {item.unitPriceUsd ? (
+                                                                            <span className="block text-[10px] text-gray-400">
+                                                                                {formatUSD(item.unitPriceUsd)}
+                                                                            </span>
+                                                                        ) : null}
+                                                                    </td>
+                                                                )}
+                                            
+                                                                {/* 備註 */}
+                                                                <td className="py-2 px-3 text-gray-500 text-xs overflow-hidden text-ellipsis max-w-[200px]" title={item.remark}>
+                                                                    {item.remark || '-'}
+                                                                </td>
+                                            
+                                                                {/* 刪除按鈕 (僅管理員顯示) */}
+                                                                {isAdmin && (
+                                                                    <td className="py-2 px-3 text-center whitespace-nowrap">
+                                                                        <button 
+                                                                            onClick={() => handleDeleteItem(order, idx)} 
+                                                                            className="text-gray-400 hover:text-red-500 p-1 transition-colors" 
+                                                                            title="刪除此明細"
+                                                                        >
+                                                                            <i className="fas fa-trash-alt"></i>
+                                                                        </button>
+                                                                    </td>
+                                                                )}
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
                                                                 )}
                                                             </div>
                                                             
