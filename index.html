@@ -1027,7 +1027,7 @@
                                 
                                 <div className="bg-gray-50 p-3 rounded border overflow-x-auto">
                                     <div className="flex justify-between items-center mb-2">
-                                        <h3 className="text-xs font-bold text-gray-800">採購細項 (單價將自動帶入最新的)</h3>
+                                        <h3 className="text-xs font-bold text-gray-800">採購細項 (輸入精機型號將自動帶入廠商型號與單價，亦可手動修改)</h3>
                                         <button type="button" onClick={() => setFormData({...formData, items: [...formData.items, {model:'', vendorModel:'', quantity:1, unitPrice:'', unitPriceUsd:'', remark:''}]})} className="text-xs text-blue-600 font-bold bg-blue-100 px-2 py-1 rounded hover:bg-blue-200 whitespace-nowrap"><i className="fas fa-plus mr-1"></i>新增一列</button>
                                     </div>
                                     {formData.items.map((item, index) => {
@@ -1039,10 +1039,13 @@
                                                             const val = e.target.value;
                                                             const n = [...formData.items]; 
                                                             n[index].model = val; 
-                                                            const priceObj = prices.find(p => p.model === val.trim());
+                                                            
+                                                            // 自動帶入單價與廠商型號
+                                                            const priceObj = prices.find(p => p.model.toLowerCase() === val.trim().toLowerCase());
                                                             if (priceObj) {
                                                                 n[index].unitPrice = priceObj.price;
                                                                 n[index].unitPriceUsd = priceObj.priceUsd || '';
+                                                                n[index].vendorModel = priceObj.vendorModel || '';
                                                             }
                                                             setFormData({...formData, items: n});
                                                         }} 
@@ -1053,7 +1056,7 @@
                                                     </div>
                                                 </div>
                                                 
-                                                <input type="text" placeholder="廠商型號" value={item.vendorModel} onChange={e => {const n=[...formData.items]; n[index].vendorModel=e.target.value; setFormData({...formData, items: n})}} className="w-full sm:w-32 px-2 py-1.5 text-sm border rounded outline-none focus:ring-1 focus:ring-blue-500 shrink-0" />
+                                                <input type="text" placeholder="廠商型號 (可手動修改)" value={item.vendorModel} onChange={e => {const n=[...formData.items]; n[index].vendorModel=e.target.value; setFormData({...formData, items: n})}} className="w-full sm:w-32 px-2 py-1.5 text-sm border rounded outline-none focus:ring-1 focus:ring-blue-500 shrink-0" />
                                                 
                                                 <input type="number" placeholder="數量" value={item.quantity} onChange={e => {const n=[...formData.items]; n[index].quantity=e.target.value; setFormData({...formData, items: n})}} className="w-14 px-2 py-1.5 text-sm border rounded text-center outline-none focus:ring-1 focus:ring-blue-500 shrink-0" />
                                                 
@@ -1184,10 +1187,11 @@
                                                                                             const val = e.target.value;
                                                                                             const n=[...editingItems.items]; 
                                                                                             n[idx].model=val; 
-                                                                                            const priceObj = prices.find(p => p.model === val.trim());
+                                                                                            const priceObj = prices.find(p => p.model.toLowerCase() === val.trim().toLowerCase());
                                                                                             if (priceObj) {
                                                                                                 n[idx].unitPrice = priceObj.price;
                                                                                                 n[idx].unitPriceUsd = priceObj.priceUsd || '';
+                                                                                                n[idx].vendorModel = priceObj.vendorModel || '';
                                                                                             }
                                                                                             setEditingItems({...editingItems,items:n});
                                                                                         }}/>
