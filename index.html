@@ -61,9 +61,9 @@
             const [orders, setOrders] = useState([]);
             const [prices, setPrices] = useState([]); 
             const [vendors, setVendors] = useState([]); 
-            const [inventory, setInventory] = useState({}); // 庫存與出貨紀錄資料
+            const [inventory, setInventory] = useState({}); 
             
-            const [currentView, setCurrentView] = useState('PO_LIST'); // PO_LIST, VENDOR_MANAGEMENT, PRICE_MANAGEMENT, INVENTORY_MANAGEMENT
+            const [currentView, setCurrentView] = useState('PO_LIST'); 
             
             const [showAddForm, setShowAddForm] = useState(false);
             const [expandedOrderId, setExpandedOrderId] = useState(null);
@@ -96,9 +96,12 @@
             const [expandedPrices, setExpandedPrices] = useState({});
             const [expandedCategories, setExpandedCategories] = useState({}); 
             
+            // 庫存頁面的獨立摺疊狀態
+            const [invExpandedCategories, setInvExpandedCategories] = useState({});
+            const [invExpandedPrices, setInvExpandedPrices] = useState({});
+
             const [bomModal, setBomModal] = useState({ isOpen: false, priceId: null, modelName: '', items: [] });
             
-            // 庫存管理彈跳視窗狀態
             const [invModal, setInvModal] = useState({ 
                 isOpen: false, 
                 modelItem: null, 
@@ -719,6 +722,14 @@
                 setExpandedCategories(prev => ({ ...prev, [catKey]: !prev[catKey] }));
             };
 
+            const toggleInvCategoryExpand = (catKey) => {
+                setInvExpandedCategories(prev => ({ ...prev, [catKey]: !prev[catKey] }));
+            };
+
+            const toggleInvPriceExpand = (key) => {
+                setInvExpandedPrices(prev => ({ ...prev, [key]: !prev[key] }));
+            };
+
             if (isLoading) return <div className="min-h-screen flex items-center justify-center font-bold text-blue-600"><i className="fas fa-sync fa-spin mr-2"></i>連線雲端資料庫中...</div>;
 
             let currentMonthGroup = '';
@@ -791,14 +802,14 @@
                 );
             }
 
-            // ---------------- 庫存查詢頁面 (無需登入帳號，不開放非使用者修改) ----------------
+            // ---------------- 庫存查詢頁面 (具備分類與主型號縮放功能) ----------------
             if (currentView === 'INVENTORY_MANAGEMENT') {
                 return (
                     <div className="max-w-6xl mx-auto p-4 md:p-8 space-y-5">
                         <div className="bg-white p-4 rounded-xl shadow-sm flex justify-between items-center border border-gray-200">
                             <div>
                                 <h1 className="text-xl font-bold text-gray-900"><i className="fas fa-warehouse text-green-600 mr-2"></i>庫存查詢系統 (唯讀)</h1>
-                                <p className="text-xs text-gray-400 mt-1"><i className="fas fa-info-circle mr-1"></i>此頁面同步單價管理建立之型號與 BOM，不開放直接修改，僅提供即時庫存檢視。</p>
+                                <p className="text-xs text-gray-400 mt-1"><i className="fas fa-info-circle mr-1"></i>此頁面同步單價管理建立之型號與 BOM，可點擊分類與主型號進行縮放。</p>
                             </div>
                             <button onClick={() => setCurrentView('PO_LIST')} className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg text-sm font-bold hover:bg-gray-200">
                                 <i className="fas fa-arrow-left mr-2"></i>返回採購單
@@ -844,53 +855,78 @@
                                                         </tr>
                                                     </thead>
                                                     <tbody className="divide-y divide-gray-100 text-sm bg-white">
-                                                        {Object.keys(nestedPrices[vendor]).map(category => (
-                                                            <React.Fragment key={category}>
-                                                                <tr className="bg-gray-50">
-                                                                    <td colSpan="6" className="p-2.5 font-bold text-green-700 border-y">
-                                                                        <i className="fas fa-folder mr-2"></i>【{category}】
-                                                                    </td>
-                                                                </tr>
-                                                                {Object.keys(nestedPrices[vendor][category]).map(mainModel => (
-                                                                    <React.Fragment key={mainModel}>
-                                                                        <tr className="bg-blue-50/30">
-                                                                            <td colSpan="6" className="p-2 font-bold text-gray-800 pl-6"><i className="fas fa-tag mr-2 text-blue-500"></i>{mainModel}</td>
-                                                                        </tr>
-                                                                        {nestedPrices[vendor][category][mainModel].map(p => {
-                                                                            const inv = inventory[p.model] || { kunshan: 0, taiwan: 0, pendingShipments: [] };
-                                                                            const kunCount = Number(inv.kunshan) || 0;
-                                                                            const twCount = Number(inv.taiwan) || 0;
-                                                                            const pendingShipTotal = (inv.pendingShipments || []).reduce((sum, s) => sum + (Number(s.qty) || 0), 0);
-                                                                            const totalRemaining = kunCount + twCount - pendingShipTotal;
-                                                                            const hasBom = p.bomItems && p.bomItems.length > 0;
+                                                        {Object.keys(nestedPrices[vendor]).map(category => {
+                                                            const catKey = `${vendor}-${category}`;
+                                                            const isCatExp = invExpandedCategories[catKey] === true || invSearch.model.trim() !== '';
 
-                                                                            return (
-                                                                                <tr key={p.id} className="hover:bg-gray-50">
-                                                                                    <td className="p-3 font-bold text-gray-800 pl-10 flex items-center">
-                                                                                        <i className="fas fa-level-up-alt fa-rotate-90 text-gray-300 mr-2"></i>{p.model}
-                                                                                        {hasBom && <span className="ml-2 bg-blue-100 text-blue-800 text-[10px] px-1.5 py-0.5 rounded font-bold">BOM</span>}
-                                                                                    </td>
-                                                                                    <td className="p-3 text-gray-600">{p.vendorModel || '-'}</td>
-                                                                                    <td className="p-3 text-center font-bold text-blue-600">{kunCount}</td>
-                                                                                    <td className="p-3 text-center font-bold text-indigo-600">{twCount}</td>
-                                                                                    <td className="p-3 text-center font-black text-green-600">{totalRemaining}</td>
-                                                                                    <td className="p-3 text-center whitespace-nowrap">
-                                                                                        {isAdmin && (
-                                                                                            <button onClick={() => openInventoryModal(p)} className="text-green-600 hover:text-green-800 bg-green-50 border border-green-200 px-2 py-1 rounded shadow-sm text-xs font-bold mr-1" title="管理庫存">
-                                                                                                <i className="fas fa-warehouse mr-1"></i>管理庫存
-                                                                                            </button>
-                                                                                        )}
-                                                                                        <button onClick={() => setBomModal({ isOpen: true, priceId: p.id, modelName: p.model, items: p.bomItems ? JSON.parse(JSON.stringify(p.bomItems)) : [] })} className="text-purple-600 hover:text-purple-800 bg-purple-50 border border-purple-100 px-2 py-1 rounded shadow-sm text-xs font-bold">
-                                                                                            <i className="fas fa-boxes mr-1"></i>BOM
-                                                                                        </button>
+                                                            return (
+                                                                <React.Fragment key={category}>
+                                                                    <tr className="bg-gray-50 cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => toggleInvCategoryExpand(catKey)}>
+                                                                        <td colSpan="6" className="p-2.5 font-bold text-green-700 border-y shadow-inner">
+                                                                            <div className="flex items-center">
+                                                                                <i className={`fas fa-chevron-${isCatExp ? 'down' : 'right'} mr-2 text-xs text-gray-400 w-4 text-center`}></i>
+                                                                                <i className="fas fa-folder mr-2 text-green-600"></i>
+                                                                                <span>【{category}】</span>
+                                                                                <span className="text-xs text-gray-400 font-normal ml-2">({isCatExp ? '點擊收起' : '點擊展開'})</span>
+                                                                            </div>
+                                                                        </td>
+                                                                    </tr>
+                                                                    
+                                                                    {isCatExp && Object.keys(nestedPrices[vendor][category]).map(mainModel => {
+                                                                        const groupKey = `${vendor}-${category}-${mainModel}`;
+                                                                        const isExp = invExpandedPrices[groupKey] === true || invSearch.model.trim() !== '';
+                                                                        const items = nestedPrices[vendor][category][mainModel];
+
+                                                                        return (
+                                                                            <React.Fragment key={mainModel}>
+                                                                                <tr className="bg-blue-50/40 cursor-pointer hover:bg-blue-50 transition-colors" onClick={() => toggleInvPriceExpand(groupKey)}>
+                                                                                    <td colSpan="6" className="p-2 font-bold text-gray-800 pl-6">
+                                                                                        <div className="flex items-center">
+                                                                                            <i className={`fas fa-chevron-${isExp ? 'up' : 'down'} mr-2 text-xs text-gray-400 w-4 text-center`}></i>
+                                                                                            <i className="fas fa-tag mr-2 text-blue-500"></i>
+                                                                                            <span>{mainModel}</span>
+                                                                                            <span className="text-xs text-gray-500 font-normal ml-2">({items.length} 個細項)</span>
+                                                                                        </div>
                                                                                     </td>
                                                                                 </tr>
-                                                                            );
-                                                                        })}
-                                                                    </React.Fragment>
-                                                                ))}
-                                                            </React.Fragment>
-                                                        ))}
+
+                                                                                {isExp && items.map(p => {
+                                                                                    const inv = inventory[p.model] || { kunshan: 0, taiwan: 0, pendingShipments: [] };
+                                                                                    const kunCount = Number(inv.kunshan) || 0;
+                                                                                    const twCount = Number(inv.taiwan) || 0;
+                                                                                    const pendingShipTotal = (inv.pendingShipments || []).reduce((sum, s) => sum + (Number(s.qty) || 0), 0);
+                                                                                    const totalRemaining = kunCount + twCount - pendingShipTotal;
+                                                                                    const hasBom = p.bomItems && p.bomItems.length > 0;
+
+                                                                                    return (
+                                                                                        <tr key={p.id} className="hover:bg-gray-50 bg-[#f4f9ff]">
+                                                                                            <td className="p-3 font-bold text-gray-800 pl-12 flex items-center">
+                                                                                                <i className="fas fa-level-up-alt fa-rotate-90 text-gray-300 mr-2"></i>{p.model}
+                                                                                                {hasBom && <span className="ml-2 bg-blue-100 text-blue-800 text-[10px] px-1.5 py-0.5 rounded font-bold">BOM</span>}
+                                                                                            </td>
+                                                                                            <td className="p-3 text-gray-600">{p.vendorModel || '-'}</td>
+                                                                                            <td className="p-3 text-center font-bold text-blue-600">{kunCount}</td>
+                                                                                            <td className="p-3 text-center font-bold text-indigo-600">{twCount}</td>
+                                                                                            <td className="p-3 text-center font-black text-green-600">{totalRemaining}</td>
+                                                                                            <td className="p-3 text-center whitespace-nowrap">
+                                                                                                {isAdmin && (
+                                                                                                    <button onClick={() => openInventoryModal(p)} className="text-green-600 hover:text-green-800 bg-green-50 border border-green-200 px-2 py-1 rounded shadow-sm text-xs font-bold mr-1" title="管理庫存">
+                                                                                                        <i className="fas fa-warehouse mr-1"></i>管理庫存
+                                                                                                    </button>
+                                                                                                )}
+                                                                                                <button onClick={() => setBomModal({ isOpen: true, priceId: p.id, modelName: p.model, items: p.bomItems ? JSON.parse(JSON.stringify(p.bomItems)) : [] })} className="text-purple-600 hover:text-purple-800 bg-purple-50 border border-purple-100 px-2 py-1 rounded shadow-sm text-xs font-bold">
+                                                                                                    <i className="fas fa-boxes mr-1"></i>BOM
+                                                                                                </button>
+                                                                                            </td>
+                                                                                        </tr>
+                                                                                    );
+                                                                                })}
+                                                                            </React.Fragment>
+                                                                        );
+                                                                    })}
+                                                                </React.Fragment>
+                                                            );
+                                                        })}
                                                     </tbody>
                                                 </table>
                                             </div>
@@ -1020,7 +1056,7 @@
                 );
             }
 
-            // ---------------- 單價管理頁面 (完全恢復原狀) ----------------
+            // ---------------- 單價管理頁面 (維持原狀) ----------------
             if (currentView === 'PRICE_MANAGEMENT' && isAdmin) {
                 return (
                     <div className="max-w-5xl mx-auto p-4 md:p-8 space-y-5">
