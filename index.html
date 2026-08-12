@@ -61,8 +61,9 @@
             const [orders, setOrders] = useState([]);
             const [prices, setPrices] = useState([]); 
             const [vendors, setVendors] = useState([]); 
+            const [inventory, setInventory] = useState({}); // 庫存與出貨紀錄資料
             
-            const [currentView, setCurrentView] = useState('PO_LIST'); 
+            const [currentView, setCurrentView] = useState('PO_LIST'); // PO_LIST, VENDOR_MANAGEMENT, PRICE_MANAGEMENT, INVENTORY_MANAGEMENT
             
             const [showAddForm, setShowAddForm] = useState(false);
             const [expandedOrderId, setExpandedOrderId] = useState(null);
@@ -72,23 +73,19 @@
             const [dateRange, setDateRange] = useState({ start: '', end: '' });
             const [sortOrder, setSortOrder] = useState('desc'); 
             
-            // 編輯狀態管理
             const [editingItems, setEditingItems] = useState({ orderId: null, items: [] });
             const [editingHeader, setEditingHeader] = useState({ id: null, displayId: '', vendor: '', orderDate: '', deliveryDate: '', orderRemark: '' }); 
             
             const [isSubmitting, setIsSubmitting] = useState(false);
 
-            // 權限管理
             const [currentUser, setCurrentUser] = useState(null);
             const isAdmin = currentUser === 'Ryan';
             const [showLoginModal, setShowLoginModal] = useState(false);
             const [loginForm, setLoginForm] = useState({ username: '', password: '' });
             const [loginError, setLoginError] = useState('');
 
-            // 廠商管理狀態
             const [vendorModal, setVendorModal] = useState({ isOpen: false, id: null, name: '', contact: '', address: '', phone: '', remark: '' });
 
-            // 單價管理狀態
             const [priceModal, setPriceModal] = useState({ 
                 isOpen: false, id: null, vendor: '', 
                 category: '平縫', customCategory: '', mainModel: '', 
@@ -99,10 +96,21 @@
             const [expandedPrices, setExpandedPrices] = useState({});
             const [expandedCategories, setExpandedCategories] = useState({}); 
             
-            // BOM 管理視窗狀態 (包含備註欄位)
             const [bomModal, setBomModal] = useState({ isOpen: false, priceId: null, modelName: '', items: [] });
             
+            // 庫存管理彈跳視窗狀態
+            const [invModal, setInvModal] = useState({ 
+                isOpen: false, 
+                modelItem: null, 
+                kunshan: 0, 
+                taiwan: 0, 
+                shipments: [], // 出貨紀錄
+                pendingShipments: [] // 預計出貨
+            });
+            const [newShipmentInput, setNewShipmentInput] = useState({ unit: '', qty: '', recipient: '', date: todayStr });
+
             const [priceSearch, setPriceSearch] = useState({ vendor: '', model: '' });
+            const [invSearch, setInvSearch] = useState({ vendor: '', model: '' });
             
             const [draggedPriceId, setDraggedPriceId] = useState(null);
             const [draggedMainModel, setDraggedMainModel] = useState(null); 
@@ -112,7 +120,7 @@
                 items: [{ model: '', vendorModel: '', quantity: 1, unitPrice: '', unitPriceUsd: '', remark: '' }]
             };
             const [formData, setFormData] = useState(initialFormState);
-            const [completeData, setCompleteData] = useState({ date: todayStr, remark: '' });
+            const [completeData, setCompleteData] = useState({ date: todayStr, remark: '', targetLoc: '崑山' });
 
             useEffect(() => {
                 const handleOnline = () => setIsOnline(true);
@@ -152,7 +160,15 @@
                     setVendors(vList);
                 }, err => console.error("讀取廠商失敗:", err));
 
-                return () => { unsubOrders(); unsubPrices(); unsubVendors(); };
+                const unsubInventory = db.collection('po_inventory').onSnapshot(snapshot => {
+                    const invMap = {};
+                    snapshot.docs.forEach(doc => {
+                        invMap[doc.id] = doc.data();
+                    });
+                    setInventory(invMap);
+                }, err => console.error("讀取庫存失敗:", err));
+
+                return () => { unsubOrders(); unsubPrices(); unsubVendors(); unsubInventory(); };
             }, [firebaseUser]);
 
             const handleLogin = (e) => {
@@ -195,6 +211,21 @@
                 }, 0);
             };
 
+            // 計算處理中採購單中特定機型的總數量
+            const getPendingQtyForModel = (modelName) => {
+                let total = 0;
+                orders.forEach(o => {
+                    if (o.status === '處理中' && o.items) {
+                        o.items.forEach(i => {
+                            if (i.model && i.model.trim().toLowerCase() === modelName.trim().toLowerCase()) {
+                                total += Number(i.quantity) || 0;
+                            }
+                        });
+                    }
+                });
+                return total;
+            };
+
             const handleSaveVendor = async (e) => {
                 e.preventDefault();
                 if (!vendorModal.name.trim()) return alert("請填寫廠商名稱");
@@ -233,6 +264,7 @@
                         const isPriceChanged = (rmbVal !== oldPrice);
                         if (isPriceChanged && !priceModal.reason.trim()) {
                             return alert("單價已變更，請務必填寫「本次異動原因」！");
+            
                         }
             
                         const usdVal = (item.priceUsd && item.priceUsd.toString().trim().toUpperCase() === 'N') ? 'N' : (item.priceUsd ? Number(item.priceUsd) : null);
@@ -368,14 +400,37 @@
             const handleCompleteOrder = async (orderDbId) => {
                 if (!completeData.date) return alert("請選擇完成時間");
                 try {
+                    // 自動加到對應庫存
+                    const orderToComplete = orders.find(o => o.dbId === orderDbId);
+                    if (orderToComplete && orderToComplete.items) {
+                        const batch = db.batch();
+                        for (const item of orderToComplete.items) {
+                            if (item.model) {
+                                const invDocRef = db.collection('po_inventory').doc(item.model);
+                                const currentInv = inventory[item.model] || { kunshan: 0, taiwan: 0, shipments: [], pendingShipments: [] };
+                                const addQty = Number(item.quantity) || 0;
+                                
+                                const updateData = {
+                                    model: item.model,
+                                    kunshan: completeData.targetLoc === '崑山' ? (Number(currentInv.kunshan) || 0) + addQty : (Number(currentInv.kunshan) || 0),
+                                    taiwan: completeData.targetLoc === '台灣' ? (Number(currentInv.taiwan) || 0) + addQty : (Number(currentInv.taiwan) || 0)
+                                };
+                                batch.set(invDocRef, updateData, { merge: true });
+                            }
+                        }
+                        await batch.commit();
+                    }
+
                     await db.collection('po_orders').doc(orderDbId).update({
                         status: '已收貨',
-                        completionData: { date: completeData.date, remark: completeData.remark }
+                        completionData: { date: completeData.date, remark: completeData.remark, targetLoc: completeData.targetLoc }
                     });
-                    setCompleteData({ date: todayStr, remark: '' });
+                    setCompleteData({ date: todayStr, remark: '', targetLoc: '崑山' });
                     setExpandedOrderId(null);
+                    alert("採購單已完成收貨，數量已自動加至對應庫存！");
                 } catch (error) {
                     console.error("更新失敗:", error);
+                    alert("收貨更新失敗！");
                 }
             };
 
@@ -441,6 +496,70 @@
                         alert("刪除失敗！");
                     }
                 }
+            };
+
+            // 開啟庫存管理 Modal
+            const openInventoryModal = (pItem) => {
+                const currentInv = inventory[pItem.model] || { kunshan: 0, taiwan: 0, shipments: [], pendingShipments: [] };
+                setInvModal({
+                    isOpen: true,
+                    modelItem: pItem,
+                    kunshan: Number(currentInv.kunshan) || 0,
+                    taiwan: Number(currentInv.taiwan) || 0,
+                    shipments: currentInv.shipments || [],
+                    pendingShipments: currentInv.pendingShipments || []
+                });
+            };
+
+            const saveInventoryData = async () => {
+                if (!invModal.modelItem) return;
+                try {
+                    const modelName = invModal.modelItem.model;
+                    await db.collection('po_inventory').doc(modelName).set({
+                        model: modelName,
+                        kunshan: Number(invModal.kunshan) || 0,
+                        taiwan: Number(invModal.taiwan) || 0,
+                        shipments: invModal.shipments,
+                        pendingShipments: invModal.pendingShipments
+                    }, { merge: true });
+                    setInvModal({ isOpen: false, modelItem: null, kunshan: 0, taiwan: 0, shipments: [], pendingShipments: [] });
+                    alert("庫存資料儲存成功！");
+                } catch (error) {
+                    console.error("庫存儲存失敗:", error);
+                    alert("庫存儲存失敗！");
+                }
+            };
+
+            const handleAddPendingShipment = () => {
+                if (!newShipmentInput.unit || !newShipmentInput.qty) return alert("請填寫預計出貨單位與數量");
+                const newItem = {
+                    id: Date.now(),
+                    unit: newShipmentInput.unit,
+                    qty: Number(newShipmentInput.qty),
+                    recipient: newShipmentInput.recipient,
+                    date: newShipmentInput.date
+                };
+                setInvModal({
+                    ...invModal,
+                    pendingShipments: [...invModal.pendingShipments, newItem]
+                });
+                setNewShipmentInput({ unit: '', qty: '', recipient: '', date: todayStr });
+            };
+
+            const handleCompleteShipment = (shipmentId) => {
+                const target = invModal.pendingShipments.find(s => s.id === shipmentId);
+                if (!target) return;
+                
+                const completedItem = {
+                    ...target,
+                    completedDate: todayStr
+                };
+
+                setInvModal({
+                    ...invModal,
+                    pendingShipments: invModal.pendingShipments.filter(s => s.id !== shipmentId),
+                    shipments: [...invModal.shipments, completedItem]
+                });
             };
 
             const handleDragStart = (e, id) => {
@@ -676,6 +795,144 @@
                 );
             }
 
+            // ---------------- 庫存查詢頁面 (無需登入帳號，不開放非使用者修改) ----------------
+            if (currentView === 'INVENTORY_MANAGEMENT') {
+                return (
+                    <div className="max-w-6xl mx-auto p-4 md:p-8 space-y-5">
+                        <div className="bg-white p-4 rounded-xl shadow-sm flex justify-between items-center border border-gray-200">
+                            <div>
+                                <h1 className="text-xl font-bold text-gray-900"><i className="fas fa-warehouse text-green-600 mr-2"></i>庫存查詢系統 (唯讀)</h1>
+                                <p className="text-xs text-gray-400 mt-1"><i className="fas fa-info-circle mr-1"></i>此頁面同步單價管理建立之型號與 BOM，不開放直接修改，僅提供即時庫存檢視。</p>
+                            </div>
+                            <button onClick={() => setCurrentView('PO_LIST')} className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg text-sm font-bold hover:bg-gray-200">
+                                <i className="fas fa-arrow-left mr-2"></i>返回採購單
+                            </button>
+                        </div>
+
+                        <div className="bg-white rounded-xl shadow-sm border p-5">
+                            <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4 border-b border-gray-100 pb-4">
+                                <div className="flex w-full md:w-auto gap-2">
+                                    <select value={invSearch.vendor} onChange={e => setInvSearch({...invSearch, vendor: e.target.value})} className="border border-gray-300 rounded px-3 py-2 text-sm focus:ring-1 focus:ring-green-500 outline-none">
+                                        <option value="">-- 所有供應商 --</option>
+                                        <option value="未分類">未分類</option>
+                                        {vendors.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
+                                    </select>
+                                    <div className="relative flex-1 md:w-64">
+                                        <i className="fas fa-search absolute left-3 top-2.5 text-gray-400 text-sm"></i>
+                                        <input type="text" placeholder="搜尋精機或廠商型號..." value={invSearch.model} onChange={e => setInvSearch({...invSearch, model: e.target.value})} className="pl-9 pr-3 py-2 w-full border border-gray-300 rounded text-sm focus:ring-1 focus:ring-green-500 outline-none" />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {Object.keys(nestedPrices).length === 0 ? (
+                                <div className="p-8 text-center text-gray-400">目前尚無符合的資料。</div>
+                            ) : (
+                                Object.keys(nestedPrices).map(vendor => {
+                                    if (invSearch.vendor && vendor !== invSearch.vendor) return null;
+                                    return (
+                                        <div key={vendor} className="mb-8 border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+                                            <div className="bg-gray-100 px-4 py-3 border-b border-gray-200 flex justify-between items-center">
+                                                <h3 className="font-bold text-gray-800"><i className="fas fa-building text-gray-500 mr-2"></i>{vendor}</h3>
+                                            </div>
+                                            
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full text-left min-w-max">
+                                                    <thead className="bg-white text-xs text-gray-500 border-b">
+                                                        <tr>
+                                                            <th className="p-3 w-72">精機型號 / 細項</th>
+                                                            <th className="p-3 w-40">廠商型號</th>
+                                                            <th className="p-3 text-center w-28">崑山庫存</th>
+                                                            <th className="p-3 text-center w-28">台灣庫存</th>
+                                                            <th className="p-3 text-center w-28 text-green-700">剩餘庫存</th>
+                                                            <th className="p-3 text-center w-32">BOM 功能</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-gray-100 text-sm bg-white">
+                                                        {Object.keys(nestedPrices[vendor]).map(category => (
+                                                            <React.Fragment key={category}>
+                                                                <tr className="bg-gray-50">
+                                                                    <td colSpan="6" className="p-2.5 font-bold text-green-700 border-y">
+                                                                        <i className="fas fa-folder mr-2"></i>【{category}】
+                                                                    </td>
+                                                                </tr>
+                                                                {Object.keys(nestedPrices[vendor][category]).map(mainModel => (
+                                                                    <React.Fragment key={mainModel}>
+                                                                        <tr className="bg-blue-50/30">
+                                                                            <td colSpan="6" className="p-2 font-bold text-gray-800 pl-6"><i className="fas fa-tag mr-2 text-blue-500"></i>{mainModel}</td>
+                                                                        </tr>
+                                                                        {nestedPrices[vendor][category][mainModel].map(p => {
+                                                                            const inv = inventory[p.model] || { kunshan: 0, taiwan: 0 };
+                                                                            const kunCount = Number(inv.kunshan) || 0;
+                                                                            const twCount = Number(inv.taiwan) || 0;
+                                                                            const totalRemaining = kunCount + twCount;
+                                                                            const hasBom = p.bomItems && p.bomItems.length > 0;
+
+                                                                            return (
+                                                                                <tr key={p.id} className="hover:bg-gray-50">
+                                                                                    <td className="p-3 font-bold text-gray-800 pl-10 flex items-center">
+                                                                                        <i className="fas fa-level-up-alt fa-rotate-90 text-gray-300 mr-2"></i>{p.model}
+                                                                                        {hasBom && <span className="ml-2 bg-blue-100 text-blue-800 text-[10px] px-1.5 py-0.5 rounded font-bold">BOM</span>}
+                                                                                    </td>
+                                                                                    <td className="p-3 text-gray-600">{p.vendorModel || '-'}</td>
+                                                                                    <td className="p-3 text-center font-bold text-blue-600">{kunCount}</td>
+                                                                                    <td className="p-3 text-center font-bold text-indigo-600">{twCount}</td>
+                                                                                    <td className="p-3 text-center font-black text-green-600">{totalRemaining}</td>
+                                                                                    <td className="p-3 text-center">
+                                                                                        <button onClick={() => setBomModal({ isOpen: true, priceId: p.id, modelName: p.model, items: p.bomItems ? JSON.parse(JSON.stringify(p.bomItems)) : [] })} className="text-purple-600 hover:text-purple-800 bg-purple-50 border border-purple-100 px-2 py-1 rounded shadow-sm text-xs font-bold">
+                                                                                            <i className="fas fa-boxes mr-1"></i>檢視 BOM
+                                                                                        </button>
+                                                                                    </td>
+                                                                                </tr>
+                                                                            );
+                                                                        })}
+                                                                    </React.Fragment>
+                                                                ))}
+                                                            </React.Fragment>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    );
+                                })
+                            )}
+                        </div>
+
+                        {/* BOM 檢視視窗 (唯讀) */}
+                        {bomModal.isOpen && (
+                            <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 overflow-y-auto">
+                                <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-4xl my-auto">
+                                    <div className="flex justify-between items-center mb-4 border-b pb-2">
+                                        <h2 className="text-lg font-bold text-purple-900"><i className="fas fa-boxes mr-2"></i>【{bomModal.modelName}】BOM (物料清單) 檢視</h2>
+                                        <button onClick={() => setBomModal({ isOpen: false, priceId: null, modelName: '', items: [] })} className="text-gray-400 hover:text-gray-800"><i className="fas fa-times"></i></button>
+                                    </div>
+                                    <div className="space-y-2 max-h-[50vh] overflow-y-auto p-1">
+                                        <div className="grid grid-cols-12 gap-2 text-xs font-bold text-gray-600 px-2">
+                                            <div className="col-span-3">料號</div>
+                                            <div className="col-span-4">名稱</div>
+                                            <div className="col-span-2 text-center">數量</div>
+                                            <div className="col-span-3">備註</div>
+                                        </div>
+                                        {bomModal.items.map((bItem, bIdx) => (
+                                            <div key={bIdx} className="grid grid-cols-12 gap-2 items-center bg-gray-50 p-2 rounded-lg border">
+                                                <div className="col-span-3 text-sm font-bold">{bItem.partNo || '-'}</div>
+                                                <div className="col-span-4 text-sm">{bItem.name || '-'}</div>
+                                                <div className="col-span-2 text-sm text-center">{bItem.qty || 1}</div>
+                                                <div className="col-span-3 text-sm text-gray-500">{bItem.remark || '-'}</div>
+                                            </div>
+                                        ))}
+                                        {bomModal.items.length === 0 && <div className="p-4 text-center text-gray-400">此機型尚無設定 BOM 物料清單。</div>}
+                                    </div>
+                                    <div className="mt-4 pt-4 border-t flex justify-end">
+                                        <button type="button" onClick={() => setBomModal({ isOpen: false, priceId: null, modelName: '', items: [] })} className="px-5 py-2 bg-gray-200 hover:bg-gray-300 rounded text-sm font-bold text-gray-700">關閉</button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                );
+            }
+
             // ---------------- 單價管理頁面 ----------------
             if (currentView === 'PRICE_MANAGEMENT' && isAdmin) {
                 return (
@@ -685,9 +942,14 @@
                                 <h1 className="text-xl font-bold text-gray-900"><i className="fas fa-tags text-blue-600 mr-2"></i>精機單價管理中心</h1>
                                 <p className="text-xs text-gray-400 mt-1"><i className="fas fa-info-circle mr-1"></i>提示：在下方型號細項上**點擊兩下 (Double Click)** 可進入並建立該型號的 BOM。</p>
                             </div>
-                            <button onClick={() => setCurrentView('PO_LIST')} className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg text-sm font-bold hover:bg-gray-200">
-                                <i className="fas fa-arrow-left mr-2"></i>返回採購單
-                            </button>
+                            <div className="flex gap-2">
+                                <button onClick={() => setCurrentView('INVENTORY_MANAGEMENT')} className="bg-green-100 text-green-700 px-4 py-2 rounded-lg text-sm font-bold hover:bg-green-200">
+                                    <i className="fas fa-warehouse mr-2"></i>庫存查詢
+                                </button>
+                                <button onClick={() => setCurrentView('PO_LIST')} className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg text-sm font-bold hover:bg-gray-200">
+                                    <i className="fas fa-arrow-left mr-2"></i>返回採購單
+                                </button>
+                            </div>
                         </div>
 
                         <div className="bg-white rounded-xl shadow-sm border p-5">
@@ -722,12 +984,12 @@
                                                 <thead className="bg-white text-xs text-gray-500 border-b">
                                                     <tr>
                                                         <th className="p-2 w-12"></th>
-                                                        <th className="p-2 w-93">精機型號 / 細項</th>
+                                                        <th className="p-2 w-72">精機型號 / 細項</th>
                                                         <th className="p-2 w-40">廠商型號</th>
                                                         <th className="p-2 text-right w-24">單價(RMB)</th>
                                                         <th className="p-2 text-right w-24 border-l">單價(USD)</th>
-                                                        <th className="p-2 w-40">描述</th>
-                                                        <th className="p-2 text-center w-48">操作</th>
+                                                        <th className="p-2 w-32">描述</th>
+                                                        <th className="p-2 text-center w-60">操作</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody className="divide-y divide-gray-100 text-sm bg-white">
@@ -737,14 +999,12 @@
 
                                                         return (
                                                             <React.Fragment key={category}>
-                                                                {/* 修正分類列排版，乾淨呈現摺疊狀態 */}
                                                                 <tr className="bg-gray-50 cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => toggleCategoryExpand(catKey)}>
                                                                     <td colSpan="7" className="p-2.5 font-bold text-pink-600 border-y shadow-inner">
                                                                         <div className="flex items-center">
                                                                             <i className={`fas fa-chevron-${isCatExp ? 'down' : 'right'} mr-2 text-xs text-gray-400 w-4 text-center`}></i>
                                                                             <i className="fas fa-folder mr-2 text-pink-500"></i>
                                                                             <span>【{category}】</span>
-                                                                            <span className="text-xs text-gray-400 font-normal ml-2">({isCatExp ? '點擊收起' : '點擊展開'})</span>
                                                                         </div>
                                                                     </td>
                                                                 </tr>
@@ -773,7 +1033,7 @@
                                                                                     className={`cursor-pointer transition-colors ${draggedMainModel?.mainModel === mainModel ? 'bg-blue-100' : 'hover:bg-gray-100'}`}
                                                                                     onClick={() => togglePriceExpand(groupKey)}
                                                                                 >
-                                                                                    <td className="p-2 text-center text-gray-400" title={isDraggable ? "拖曳以排序主型號" : "搜尋時無法拖曳排序"}>
+                                                                                    <td className="p-2 text-center text-gray-400">
                                                                                         <i className={`fas fa-grip-vertical mr-2 ${isDraggable ? 'cursor-grab hover:text-gray-600' : 'opacity-30 cursor-not-allowed'}`}></i>
                                                                                         <i className={`fas fa-chevron-${isExp?'up':'down'}`}></i>
                                                                                     </td>
@@ -789,37 +1049,30 @@
                                                                                             onDragEnd={handleDragEnd}
                                                                                             onDragOver={handleDragOver} 
                                                                                             onDrop={(e) => handleDrop(e, p.id, items)}
-                                                                                            onDoubleClick={() => setBomModal({ isOpen: true, priceId: p.id, modelName: p.model, items: p.bomItems ? JSON.parse(JSON.stringify(p.bomItems)) : [] })}
                                                                                             className={`transition-colors bg-[#f4f9ff] hover:bg-blue-50 cursor-pointer ${draggedPriceId === p.id ? 'bg-blue-100' : ''}`}
-                                                                                            title="雙擊此列可進入建立 BOM"
                                                                                         >
                                                                                             <td className="p-2 text-center text-gray-300">
                                                                                                 <i className={`fas fa-grip-vertical ml-4 ${isDraggable ? 'cursor-grab hover:text-gray-500' : 'cursor-not-allowed opacity-50'}`}></i>
                                                                                             </td>
-                                                                                            <td className="p-2 font-bold text-gray-800 w-93 flex items-center">
+                                                                                            <td className="p-2 font-bold text-gray-800 flex items-center">
                                                                                                 <i className="fas fa-level-up-alt fa-rotate-90 text-gray-300 mr-2"></i>
                                                                                                 {p.model}
                                                                                                 {hasBom && <span className="ml-2 bg-blue-100 text-blue-800 text-[10px] px-1.5 py-0.5 rounded font-bold">BOM</span>}
                                                                                             </td>
                                                                                             <td className="p-2 text-gray-600">{p.vendorModel || '-'}</td>
-                                                                                            <td className={`p-2 text-right pr-2 font-bold ${hasBom ? 'text-blue-600 underline decoration-dotted' : 'text-blue-700'}`} title={hasBom ? "此價格由 BOM 計算帶入" : ""}>
-                                                                                                {formatRMB(p.price)}
-                                                                                            </td>
+                                                                                            <td className="p-2 text-right pr-2 font-bold text-blue-700">{formatRMB(p.price)}</td>
                                                                                             <td className="p-2 text-right pr-2 text-gray-500 border-l">{formatUSD(p.priceUsd)}</td>
                                                                                             <td className="p-2 text-gray-500 text-xs truncate max-w-[120px]" title={p.remark}>{p.remark || '-'}</td>
                                                                                             <td className="p-2 text-center whitespace-nowrap" onClick={e => e.stopPropagation()}>
-                                                                                                <button onClick={() => setBomModal({ isOpen: true, priceId: p.id, modelName: p.model, items: p.bomItems ? JSON.parse(JSON.stringify(p.bomItems)) : [] })} className="text-purple-600 hover:text-purple-800 mx-1 bg-purple-50 border border-purple-100 px-2 py-1 rounded shadow-sm text-xs font-bold" title="管理 BOM"><i className="fas fa-boxes mr-1"></i>BOM</button>
-                                                                                                
+                                                                                                <button onClick={() => openInventoryModal(p)} className="text-green-600 hover:text-green-800 mx-1 bg-green-55 border border-green-200 px-2 py-1 rounded shadow-sm text-xs font-bold" title="管理庫存"><i className="fas fa-warehouse mr-1"></i>管理庫存</button>
+                                                                                                <button onClick={() => setBomModal({ isOpen: true, priceId: p.id, modelName: p.model, items: p.bomItems ? JSON.parse(JSON.stringify(p.bomItems)) : [] })} className="text-purple-600 hover:text-purple-800 mx-1 bg-purple-50 px-2 py-1 rounded shadow-sm text-xs font-bold" title="BOM"><i className="fas fa-boxes mr-1"></i>BOM</button>
                                                                                                 <button onClick={() => setPriceModal({ 
                                                                                                     isOpen: true, id: p.id, vendor: p.vendor, 
                                                                                                     category: p.category || '平縫', customCategory: '', mainModel: p.mainModel || '', 
                                                                                                     items: [{ model: p.model, vendorModel: p.vendorModel || '', price: p.price, priceUsd: p.priceUsd || '', remark: p.remark || '' }], 
                                                                                                     reason: '' 
-                                                                                                })} className="text-blue-600 hover:text-blue-800 mx-1 bg-blue-50 border border-blue-100 px-2 py-1 rounded shadow-sm text-xs" title="修改"><i className="fas fa-edit mr-1"></i>編輯</button>
-                                                                                                
-                                                                                                <button onClick={() => setHistoryModal({ isOpen: true, model: p.model, history: p.history || [] })} className="text-gray-500 hover:text-gray-800 mx-1 bg-white border px-2 py-1 rounded shadow-sm text-xs" title="歷史紀錄"><i className="fas fa-history mr-1"></i>紀錄</button>
-
-                                                                                                <button onClick={() => handleDeletePriceItem(p.id)} className="text-red-500 hover:text-red-700 mx-1 bg-red-50 border border-red-100 px-2 py-1 rounded shadow-sm text-xs" title="刪除此細項"><i className="fas fa-trash-alt mr-1"></i>刪除</button>
+                                                                                                })} className="text-blue-600 hover:text-blue-800 mx-1 bg-blue-50 px-2 py-1 rounded shadow-sm text-xs" title="修改"><i className="fas fa-edit mr-1"></i>編輯</button>
+                                                                                                <button onClick={() => handleDeletePriceItem(p.id)} className="text-red-500 hover:text-red-700 mx-1 bg-red-50 px-2 py-1 rounded shadow-sm text-xs" title="刪除"><i className="fas fa-trash-alt mr-1"></i>刪除</button>
                                                                                             </td>
                                                                                         </tr>
                                                                                     );
@@ -839,7 +1092,92 @@
                             )}
                         </div>
 
-                        {/* BOM 管理視窗 (已補上備註欄位) */}
+                        {/* 管理員庫存彈跳視窗 */}
+                        {invModal.isOpen && (
+                            <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 overflow-y-auto">
+                                <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-4xl my-auto space-y-4">
+                                    <div className="flex justify-between items-center border-b pb-2">
+                                        <h2 className="text-lg font-bold text-green-900"><i className="fas fa-warehouse mr-2"></i>庫存管理：{invModal.modelItem?.model}</h2>
+                                        <button onClick={() => setInvModal({ isOpen: false, modelItem: null, kunshan: 0, taiwan: 0, shipments: [], pendingShipments: [] })} className="text-gray-400 hover:text-gray-800"><i className="fas fa-times"></i></button>
+                                    </div>
+
+                                    {/* 數量面板 */}
+                                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3 bg-gray-50 p-4 rounded-lg border text-center">
+                                        <div>
+                                            <p className="text-xs text-gray-500 font-bold mb-1">採購中</p>
+                                            <p className="text-lg font-bold text-orange-600">{getPendingQtyForModel(invModal.modelItem?.model || '')}</p>
+                                        </div>
+                                        <div>
+                                            <p className="text-xs text-gray-500 font-bold mb-1">崑山庫存</p>
+                                            <input type="number" value={invModal.kunshan} onChange={e => setInvModal({...invModal, kunshan: e.target.value})} className="w-full border p-1 text-center font-bold rounded bg-white" />
+                                        </div>
+                                        <div>
+                                            <p className="text-xs text-gray-500 font-bold mb-1">台灣庫存</p>
+                                            <input type="number" value={invModal.taiwan} onChange={e => setInvModal({...invModal, taiwan: e.target.value})} className="w-full border p-1 text-center font-bold rounded bg-white" />
+                                        </div>
+                                        <div>
+                                            <p className="text-xs text-gray-500 font-bold mb-1">預計出貨總數</p>
+                                            <p className="text-lg font-bold text-purple-600">{invModal.pendingShipments.reduce((sum, s) => sum + (Number(s.qty) || 0), 0)}</p>
+                                        </div>
+                                        <div>
+                                            <p className="text-xs text-gray-500 font-bold mb-1">剩餘庫存</p>
+                                            <p className="text-lg font-black text-green-600">{(Number(invModal.kunshan) || 0) + (Number(invModal.taiwan) || 0) - invModal.pendingShipments.reduce((sum, s) => sum + (Number(s.qty) || 0), 0)}</p>
+                                        </div>
+                                    </div>
+
+                                    {/* 預計出貨清單與新增 */}
+                                    <div className="border-t pt-3">
+                                        <h4 className="font-bold text-sm text-gray-800 mb-2">預計出貨項目管理</h4>
+                                        <div className="flex gap-2 mb-3">
+                                            <input type="text" placeholder="單位 (例如: 台/套)" value={newShipmentInput.unit} onChange={e => setNewShipmentInput({...newShipmentInput, unit: e.target.value})} className="border p-1.5 text-sm rounded w-32" />
+                                            <input type="number" placeholder="數量" value={newShipmentInput.qty} onChange={e => setNewShipmentInput({...newShipmentInput, qty: e.target.value})} className="border p-1.5 text-sm rounded w-24 text-center" />
+                                            <input type="text" placeholder="收貨客戶/目的地" value={newShipmentInput.recipient} onChange={e => setNewShipmentInput({...newShipmentInput, recipient: e.target.value})} className="border p-1.5 text-sm rounded flex-1" />
+                                            <input type="date" value={newShipmentInput.date} onChange={e => setNewShipmentInput({...newShipmentInput, date: e.target.value})} className="border p-1.5 text-sm rounded" />
+                                            <button type="button" onClick={handleAddPendingShipment} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded text-sm font-bold">新增預計出貨</button>
+                                        </div>
+                                        <div className="space-y-2 max-h-36 overflow-y-auto">
+                                            {invModal.pendingShipments.map(s => (
+                                                <div key={s.id} className="flex justify-between items-center bg-blue-50/50 border p-2 rounded text-sm">
+                                                    <div>
+                                                        <span className="font-bold mr-3">單位：{s.unit}</span>
+                                                        <span className="font-bold text-blue-600 mr-3">數量：{s.qty}</span>
+                                                        <span className="text-gray-600 mr-3">客戶：{s.recipient || '-'}</span>
+                                                        <span className="text-xs text-gray-400">預計日期：{s.date}</span>
+                                                    </div>
+                                                    <button onClick={() => handleCompleteShipment(s.id)} className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-xs font-bold">出貨完成</button>
+                                                </div>
+                                            ))}
+                                            {invModal.pendingShipments.length === 0 && <div className="text-xs text-gray-400 text-center py-2">目前無預計出貨單。</div>}
+                                        </div>
+                                    </div>
+
+                                    {/* 出貨紀錄 */}
+                                    <div className="border-t pt-3">
+                                        <h4 className="font-bold text-sm text-gray-800 mb-2">已完成出貨紀錄</h4>
+                                        <div className="space-y-1 max-h-32 overflow-y-auto">
+                                            {invModal.shipments.map((sh, idx) => (
+                                                <div key={idx} className="flex justify-between items-center bg-gray-50 border p-2 rounded text-xs text-gray-600">
+                                                    <div>
+                                                        <span className="font-bold text-gray-800 mr-2">單位：{sh.unit}</span>
+                                                        <span className="font-bold text-green-700 mr-2">數量：{sh.qty}</span>
+                                                        <span className="mr-2">客戶：{sh.recipient || '-'}</span>
+                                                    </div>
+                                                    <span>完成日期：{sh.completedDate}</span>
+                                                </div>
+                                            ))}
+                                            {invModal.shipments.length === 0 && <div className="text-xs text-gray-400 text-center py-2">尚無出貨紀錄。</div>}
+                                        </div>
+                                    </div>
+
+                                    <div className="flex gap-2 pt-4 border-t">
+                                        <button type="button" onClick={() => setInvModal({ isOpen: false, modelItem: null, kunshan: 0, taiwan: 0, shipments: [], pendingShipments: [] })} className="flex-1 py-2 bg-gray-100 rounded text-sm font-bold text-gray-700">取消</button>
+                                        <button type="button" onClick={saveInventoryData} className="flex-1 py-2 bg-green-600 hover:bg-green-700 text-white rounded text-sm font-bold shadow-sm">儲存庫存變更</button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* BOM 管理視窗 */}
                         {bomModal.isOpen && (
                             <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 overflow-y-auto">
                                 <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-4xl my-auto">
@@ -861,32 +1199,17 @@
                                             <div className="col-span-1 text-center">操作</div>
                                         </div>
 
-                                        {bomModal.items.map((bItem, bIdx) => {
-                                            return (
-                                                <div key={bIdx} className="grid grid-cols-12 gap-2 items-center bg-gray-50 p-2 rounded-lg border shadow-sm">
-                                                    <div className="col-span-2">
-                                                        <input type="text" placeholder="料號" value={bItem.partNo || ''} onChange={e => { const n = [...bomModal.items]; n[bIdx].partNo = e.target.value; setBomModal({...bomModal, items: n}); }} className="w-full border p-1.5 rounded text-sm outline-none focus:ring-1 focus:ring-purple-500 bg-white" />
-                                                    </div>
-                                                    <div className="col-span-3">
-                                                        <input type="text" placeholder="名稱" value={bItem.name || ''} onChange={e => { const n = [...bomModal.items]; n[bIdx].name = e.target.value; setBomModal({...bomModal, items: n}); }} className="w-full border p-1.5 rounded text-sm outline-none focus:ring-1 focus:ring-purple-500 bg-white" />
-                                                    </div>
-                                                    <div className="col-span-1">
-                                                        <input type="number" step="1" placeholder="數量" value={bItem.qty || 1} onChange={e => { const n = [...bomModal.items]; n[bIdx].qty = e.target.value; setBomModal({...bomModal, items: n}); }} className="w-full border p-1.5 rounded text-sm text-center outline-none focus:ring-1 focus:ring-purple-500 bg-white" />
-                                                    </div>
-                                                    <div className="col-span-2">
-                                                        <input type="number" step="0.01" placeholder="單價" value={bItem.unitPrice || 0} onChange={e => { const n = [...bomModal.items]; n[bIdx].unitPrice = e.target.value; setBomModal({...bomModal, items: n}); }} className="w-full border p-1.5 rounded text-sm text-right outline-none focus:ring-1 focus:ring-purple-500 bg-white" />
-                                                    </div>
-                                                    <div className="col-span-3">
-                                                        <input type="text" placeholder="備註..." value={bItem.remark || ''} onChange={e => { const n = [...bomModal.items]; n[bIdx].remark = e.target.value; setBomModal({...bomModal, items: n}); }} className="w-full border p-1.5 rounded text-sm outline-none focus:ring-1 focus:ring-purple-500 bg-white" />
-                                                    </div>
-                                                    <div className="col-span-1 text-center">
-                                                        <button type="button" onClick={() => { const n = bomModal.items.filter((_, i) => i !== bIdx); setBomModal({...bomModal, items: n}); }} className="text-gray-400 hover:text-red-500 p-1"><i className="fas fa-trash-alt"></i></button>
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
-
-                                        <button type="button" onClick={() => setBomModal({...bomModal, items: [...bomModal.items, { partNo: '', name: '', qty: 1, unitPrice: '', remark: '' }]})} className="w-full py-2 bg-purple-50 text-purple-600 hover:bg-purple-100 rounded-lg text-xs font-bold border border-purple-200 transition-colors">
+                                        {bomModal.items.map((bItem, bIdx) => (
+                                            <div key={bIdx} className="grid grid-cols-12 gap-2 items-center bg-gray-50 p-2 rounded-lg border shadow-sm">
+                                                <div className="col-span-2"><input type="text" placeholder="料號" value={bItem.partNo || ''} onChange={e => { const n = [...bomModal.items]; n[bIdx].partNo = e.target.value; setBomModal({...bomModal, items: n}); }} className="w-full border p-1.5 rounded text-sm bg-white" /></div>
+                                                <div className="col-span-3"><input type="text" placeholder="名稱" value={bItem.name || ''} onChange={e => { const n = [...bomModal.items]; n[bIdx].name = e.target.value; setBomModal({...bomModal, items: n}); }} className="w-full border p-1.5 rounded text-sm bg-white" /></div>
+                                                <div className="col-span-1"><input type="number" step="1" placeholder="數量" value={bItem.qty || 1} onChange={e => { const n = [...bomModal.items]; n[bIdx].qty = e.target.value; setBomModal({...bomModal, items: n}); }} className="w-full border p-1.5 rounded text-sm text-center bg-white" /></div>
+                                                <div className="col-span-2"><input type="number" step="0.01" placeholder="單價" value={bItem.unitPrice || 0} onChange={e => { const n = [...bomModal.items]; n[bIdx].unitPrice = e.target.value; setBomModal({...bomModal, items: n}); }} className="w-full border p-1.5 rounded text-sm text-right bg-white" /></div>
+                                                <div className="col-span-3"><input type="text" placeholder="備註..." value={bItem.remark || ''} onChange={e => { const n = [...bomModal.items]; n[bIdx].remark = e.target.value; setBomModal({...bomModal, items: n}); }} className="w-full border p-1.5 rounded text-sm bg-white" /></div>
+                                                <div className="col-span-1 text-center"><button type="button" onClick={() => { const n = bomModal.items.filter((_, i) => i !== bIdx); setBomModal({...bomModal, items: n}); }} className="text-gray-400 hover:text-red-500 p-1"><i className="fas fa-trash-alt"></i></button></div>
+                                            </div>
+                                        ))}
+                                        <button type="button" onClick={() => setBomModal({...bomModal, items: [...bomModal.items, { partNo: '', name: '', qty: 1, unitPrice: '', remark: '' }]})} className="w-full py-2 bg-purple-50 text-purple-600 hover:bg-purple-100 rounded-lg text-xs font-bold border border-purple-200">
                                             <i className="fas fa-plus mr-1"></i> 新增一列組件
                                         </button>
                                     </div>
@@ -899,128 +1222,10 @@
                                             </span>
                                         </div>
                                         <div className="flex gap-2">
-                                            <button type="button" onClick={() => setBomModal({ isOpen: false, priceId: null, modelName: '', items: [] })} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded text-sm font-bold text-gray-700">取消</button>
+                                            <button type="button" onClick={() => setBomModal({ isOpen: false, priceId: null, modelName: '', items: [] })} className="px-4 py-2 bg-gray-100 rounded text-sm font-bold text-gray-700">取消</button>
                                             <button type="button" onClick={handleSaveBom} className="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded text-sm font-bold shadow-sm">儲存 BOM 並更新單價</button>
                                         </div>
                                     </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* 修改/新增 單價表單視窗 */}
-                        {priceModal.isOpen && (
-                            <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 overflow-y-auto">
-                                <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-3xl my-auto">
-                                    <h2 className="text-lg font-bold mb-4 border-b pb-2 text-blue-900">{priceModal.id ? '編輯細項單價' : '新增主型號與細項'}</h2>
-                                    <form onSubmit={handleSavePrice} className="space-y-4">
-                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                                            <div>
-                                                <label className="block text-xs font-bold mb-1 text-gray-700">供應商 (分類)</label>
-                                                <select value={priceModal.vendor} onChange={e => setPriceModal({...priceModal, vendor: e.target.value})} className="w-full border p-2 rounded text-sm bg-white focus:ring-1 focus:ring-blue-500 outline-none">
-                                                    <option value="">未分類</option>
-                                                    {vendors.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
-                                                </select>
-                                            </div>
-                                            <div>
-                                                <label className="block text-xs font-bold mb-1 text-gray-700">分類 (機型種類)</label>
-                                                <select value={priceModal.category} onChange={e => setPriceModal({...priceModal, category: e.target.value})} className="w-full border p-2 rounded text-sm bg-white focus:ring-1 focus:ring-blue-500 outline-none">
-                                                    <option value="平縫">平縫</option>
-                                                    <option value="包縫">包縫</option>
-                                                    <option value="繃縫">繃縫</option>
-                                                    <option value="套結">套結</option>
-                                                    <option value="鎖縫">鎖縫</option>
-                                                    <option value="新增">-- 新增 (自訂) --</option>
-                                                </select>
-                                            </div>
-                                            {priceModal.category === '新增' && (
-                                                <div>
-                                                    <label className="block text-xs font-bold mb-1 text-blue-600">自訂分類名稱 <span className="text-red-500">*必填</span></label>
-                                                    <input type="text" value={priceModal.customCategory} onChange={e => setPriceModal({...priceModal, customCategory: e.target.value})} className="w-full border border-blue-200 p-2 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" placeholder="輸入新分類" required />
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        <div>
-                                            <label className="block text-xs font-bold mb-1">主型號 (群組名稱) <span className="text-red-500">*必填</span></label>
-                                            <input type="text" value={priceModal.mainModel} onChange={e => setPriceModal({...priceModal, mainModel: e.target.value})} className="w-full border p-2 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" placeholder="例如：7000 系列" required />
-                                        </div>
-
-                                        <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
-                                            <div className="flex justify-between items-center mb-3 border-b pb-2">
-                                                <h3 className="text-sm font-bold text-gray-800">型號細項清單</h3>
-                                                {!priceModal.id && (
-                                                    <button type="button" onClick={() => setPriceModal({...priceModal, items: [...priceModal.items, {model:'', vendorModel:'', price:'', priceUsd:'', remark:''}]})} className="text-xs text-blue-600 font-bold bg-blue-100 px-2 py-1 rounded hover:bg-blue-200 whitespace-nowrap"><i className="fas fa-plus mr-1"></i>新增一列細項</button>
-                                                )}
-                                            </div>
-                                            
-                                            <div className="space-y-3">
-                                                {priceModal.items.map((item, index) => (
-                                                    <div key={index} className="flex gap-2 items-start flex-wrap sm:flex-nowrap bg-white p-2 rounded border shadow-sm">
-                                                        <div className="w-full sm:w-1/4">
-                                                            <input type="text" placeholder="精機型號 *" value={item.model} onChange={e => {const n=[...priceModal.items]; n[index].model=e.target.value; setPriceModal({...priceModal, items:n})}} className="w-full border p-1.5 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" required />
-                                                        </div>
-                                                        <div className="w-full sm:w-1/5">
-                                                            <input type="text" placeholder="廠商型號" value={item.vendorModel} onChange={e => {const n=[...priceModal.items]; n[index].vendorModel=e.target.value; setPriceModal({...priceModal, items:n})}} className="w-full border p-1.5 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" />
-                                                        </div>
-                                                        <div className="w-full sm:w-16 shrink-0">
-                                                            <input type="text" placeholder="RMB *" value={item.price} onChange={e => {const n=[...priceModal.items]; n[index].price=e.target.value; setPriceModal({...priceModal, items:n})}} className="w-full border p-1.5 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" required title="單價(RMB)" />
-                                                        </div>
-                                                        <div className="w-full sm:w-16 shrink-0">
-                                                            <input type="number" step="0.01" placeholder="USD" value={item.priceUsd} onChange={e => {const n=[...priceModal.items]; n[index].priceUsd=e.target.value; setPriceModal({...priceModal, items:n})}} className="w-full border p-1.5 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" title="單價(USD)" />
-                                                        </div>
-                                                        <div className="flex-1 min-w-[120px]">
-                                                            <input type="text" placeholder="描述 / 備註" value={item.remark} onChange={e => {const n=[...priceModal.items]; n[index].remark=e.target.value; setPriceModal({...priceModal, items:n})}} className="w-full border p-1.5 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" />
-                                                        </div>
-                                                        
-                                                        {!priceModal.id && priceModal.items.length > 1 && (
-                                                            <button type="button" onClick={() => setPriceModal({...priceModal, items: priceModal.items.filter((_,i)=>i!==index)})} className="text-gray-400 hover:text-red-500 p-1.5 mt-0.5 shrink-0"><i className="fas fa-trash-alt"></i></button>
-                                                        )}
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-
-                                        <div className="mt-4 pt-4 border-t">
-                                            <label className="block text-xs font-bold mb-1 text-gray-700">
-                                                本次異動原因 / 記錄備註 
-                                                <span className="text-gray-500 font-normal ml-1">
-                                                    {priceModal.id ? '(僅更改單價時必填)' : '(新增機型不需填寫)'}
-                                                </span>
-                                            </label>
-                                            <input type="text" value={priceModal.reason} placeholder="若修改單價，請務必填寫此處" onChange={e => setPriceModal({...priceModal, reason: e.target.value})} className="w-full border border-gray-300 p-2 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" />
-                                        </div>
-
-                                        <div className="flex gap-2 mt-6">
-                                            <button type="button" onClick={() => setPriceModal({isOpen: false, id: null, vendor: '', category: '平縫', customCategory: '', mainModel: '', items: [{ model: '', vendorModel: '', price: '', priceUsd: '', remark: '' }], reason: ''})} className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 rounded text-sm font-bold text-gray-700 transition-colors">取消</button>
-                                            <button type="submit" className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-bold shadow-sm transition-colors">儲存並寫入紀錄</button>
-                                        </div>
-                                    </form>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* 歷史紀錄彈出視窗 */}
-                        {historyModal.isOpen && (
-                            <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-                                <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-lg max-h-[80vh] overflow-y-auto">
-                                    <div className="flex justify-between items-center mb-4 border-b pb-2">
-                                        <h2 className="text-lg font-bold text-gray-800">【{historyModal.model}】價格異動紀錄</h2>
-                                        <button onClick={() => setHistoryModal({isOpen: false, model: '', history: []})} className="text-gray-400 hover:text-gray-800"><i className="fas fa-times"></i></button>
-                                    </div>
-                                    <ul className="space-y-3">
-                                        {[...historyModal.history].reverse().map((record, i) => (
-                                            <li key={i} className="bg-gray-50 border p-3 rounded text-sm">
-                                                <div className="flex justify-between mb-1">
-                                                    <div>
-                                                        <span className="font-bold text-blue-700 mr-3">{formatRMB(record.price)}</span>
-                                                        <span className="text-gray-500">{formatUSD(record.priceUsd)}</span>
-                                                    </div>
-                                                    <span className="text-xs text-gray-500"><i className="far fa-clock mr-1"></i>{new Date(record.date).toLocaleString()}</span>
-                                                </div>
-                                                <p className="text-gray-600 text-xs mt-1">原因：{record.reason}</p>
-                                            </li>
-                                        ))}
-                                    </ul>
                                 </div>
                             </div>
                         )}
@@ -1062,12 +1267,16 @@
                                 <i className={`fas ${isOnline ? 'fa-tower-broadcast' : 'fa-triangle-exclamation'} mr-2`}></i>{isOnline ? '連線中' : '系統離線'}
                             </div>
                             
+                            <button onClick={() => setCurrentView('INVENTORY_MANAGEMENT')} className="px-3 py-1.5 bg-green-100 text-green-700 rounded-lg text-sm font-bold hover:bg-green-200 shadow-sm border border-green-200 transition-colors">
+                                <i className="fas fa-warehouse mr-2"></i>庫存查詢
+                            </button>
+
                             {isAdmin && (
                                 <div className="flex gap-2">
-                                    <button onClick={() => setCurrentView('VENDOR_MANAGEMENT')} className="px-3 py-1.5 bg-indigo-100 text-indigo-700 rounded-lg text-sm font-bold hover:bg-indigo-200 shadow-sm border border-indigo-200 transition-colors">
+                                    <button onClick={() => setCurrentView('VENDOR_MANAGEMENT')} className="px-3 py-1.5 bg-indigo-100 text-indigo-700 rounded-lg text-sm font-bold hover:bg-indigo-200 shadow-sm border border-indigo-200">
                                         <i className="fas fa-building mr-2"></i>廠商管理
                                     </button>
-                                    <button onClick={() => setCurrentView('PRICE_MANAGEMENT')} className="px-3 py-1.5 bg-blue-100 text-blue-700 rounded-lg text-sm font-bold hover:bg-blue-200 shadow-sm border border-blue-200 transition-colors">
+                                    <button onClick={() => setCurrentView('PRICE_MANAGEMENT')} className="px-3 py-1.5 bg-blue-100 text-blue-700 rounded-lg text-sm font-bold hover:bg-blue-200 shadow-sm border border-blue-200">
                                         <i className="fas fa-tags mr-2"></i>單價管理
                                     </button>
                                 </div>
@@ -1132,71 +1341,65 @@
                             </div>
                             <form onSubmit={handleSubmit} noValidate className="space-y-4">
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                                    <div><label className="block text-xs text-gray-700">訂單編號</label><input type="text" value={formData.displayId} onChange={e => setFormData({...formData, displayId: e.target.value})} placeholder="留空由系統自動產生" className="w-full px-3 py-1.5 border rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" /></div>
+                                    <div><label className="block text-xs text-gray-700">訂單編號</label><input type="text" value={formData.displayId} onChange={e => setFormData({...formData, displayId: e.target.value})} placeholder="留空由系統自動產生" className="w-full px-3 py-1.5 border rounded text-sm outline-none" /></div>
                                     <div>
                                         <label className="block text-xs font-bold mb-1 text-gray-700">供應商 (從廠商管理建立)</label>
-                                        <select value={formData.vendor} onChange={e => setFormData({...formData, vendor: e.target.value})} className="w-full px-3 py-1.5 border rounded text-sm bg-white outline-none focus:ring-1 focus:ring-blue-500">
+                                        <select value={formData.vendor} onChange={e => setFormData({...formData, vendor: e.target.value})} className="w-full px-3 py-1.5 border rounded text-sm bg-white outline-none">
                                             <option value="">請選擇供應商...</option>
                                             {vendors.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
                                         </select>
                                     </div>
-                                    <div><label className="block text-xs text-gray-700">訂單日期</label><input type="date" value={formData.orderDate} onChange={e => setFormData({...formData, orderDate: e.target.value})} className="w-full px-3 py-1.5 border rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" /></div>
+                                    <div><label className="block text-xs text-gray-700">訂單日期</label><input type="date" value={formData.orderDate} onChange={e => setFormData({...formData, orderDate: e.target.value})} className="w-full px-3 py-1.5 border rounded text-sm outline-none" /></div>
                                     
                                     <div className="md:col-span-3 flex flex-col md:flex-row gap-3">
                                         <div className="w-full md:w-1/3">
-                                            <label className="block text-xs font-bold mb-1 text-gray-700">預計交期 (無限制)</label>
-                                            <input type="date" value={formData.deliveryDate} onChange={e => setFormData({...formData, deliveryDate: e.target.value})} className="w-full px-3 py-1.5 border rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" />
+                                            <label className="block text-xs font-bold mb-1 text-gray-700">預計交期</label>
+                                            <input type="date" value={formData.deliveryDate} onChange={e => setFormData({...formData, deliveryDate: e.target.value})} className="w-full px-3 py-1.5 border rounded text-sm outline-none" />
                                         </div>
                                         <div className="w-full md:w-2/3">
                                             <label className="block text-xs font-bold mb-1 text-gray-700">訂單備註</label>
-                                            <input type="text" value={formData.orderRemark} onChange={e => setFormData({...formData, orderRemark: e.target.value})} placeholder="整筆訂單的備註事項..." className="w-full px-3 py-1.5 border rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" />
+                                            <input type="text" value={formData.orderRemark} onChange={e => setFormData({...formData, orderRemark: e.target.value})} placeholder="整筆訂單的備註事項..." className="w-full px-3 py-1.5 border rounded text-sm outline-none" />
                                         </div>
                                     </div>
                                 </div>
                                 
                                 <div className="bg-gray-50 p-3 rounded border overflow-x-auto">
                                     <div className="flex justify-between items-center mb-2">
-                                        <h3 className="text-xs font-bold text-gray-800">採購細項 (輸入精機型號將自動帶入廠商型號與單價，亦可手動修改)</h3>
-                                        <button type="button" onClick={() => setFormData({...formData, items: [...formData.items, {model:'', vendorModel:'', quantity:1, unitPrice:'', unitPriceUsd:'', remark:''}]})} className="text-xs text-blue-600 font-bold bg-blue-100 px-2 py-1 rounded hover:bg-blue-200 whitespace-nowrap"><i className="fas fa-plus mr-1"></i>新增一列</button>
+                                        <h3 className="text-xs font-bold text-gray-800">採購細項</h3>
+                                        <button type="button" onClick={() => setFormData({...formData, items: [...formData.items, {model:'', vendorModel:'', quantity:1, unitPrice:'', unitPriceUsd:'', remark:''}]})} className="text-xs text-blue-600 font-bold bg-blue-100 px-2 py-1 rounded"><i className="fas fa-plus mr-1"></i>新增一列</button>
                                     </div>
-                                    {formData.items.map((item, index) => {
-                                        return (
-                                            <div key={index} className="flex gap-2 mb-2 items-start flex-wrap sm:flex-nowrap min-w-max sm:min-w-0 pb-2 border-b sm:border-0 last:border-0">
-                                                <div className="flex flex-col gap-1 w-full sm:w-48 shrink-0">
-                                                    <input type="text" list="price-models" placeholder="精機型號 (可快選)" value={item.model} 
-                                                        onChange={e => {
-                                                            const val = e.target.value;
-                                                            const n = [...formData.items]; 
-                                                            n[index].model = val; 
-                                                            const priceObj = prices.find(p => p.model.toLowerCase() === val.trim().toLowerCase());
-                                                            if (priceObj) {
-                                                                n[index].unitPrice = priceObj.price;
-                                                                n[index].unitPriceUsd = priceObj.priceUsd || '';
-                                                                n[index].vendorModel = priceObj.vendorModel || '';
-                                                            }
-                                                            setFormData({...formData, items: n});
-                                                        }} 
-                                                        className="w-full px-2 py-1.5 text-sm border rounded outline-none focus:ring-1 focus:ring-blue-500" />
-                                                    <div className="flex gap-1">
-                                                        <input type="number" step="0.01" placeholder="RMB" title="人民幣單價" value={item.unitPrice} onChange={e => {const n=[...formData.items]; n[index].unitPrice=e.target.value; setFormData({...formData, items: n})}} className="w-1/2 px-2 py-1 text-xs border rounded text-center outline-none focus:ring-1 focus:ring-blue-500 bg-white" />
-                                                        <input type="number" step="0.01" placeholder="USD" title="美金單價" value={item.unitPriceUsd} onChange={e => {const n=[...formData.items]; n[index].unitPriceUsd=e.target.value; setFormData({...formData, items: n})}} className="w-1/2 px-2 py-1 text-xs border rounded text-center outline-none focus:ring-1 focus:ring-blue-500 bg-white" />
-                                                    </div>
+                                    {formData.items.map((item, index) => (
+                                        <div key={index} className="flex gap-2 mb-2 items-start flex-wrap sm:flex-nowrap pb-2 border-b sm:border-0">
+                                            <div className="flex flex-col gap-1 w-full sm:w-48 shrink-0">
+                                                <input type="text" list="price-models" placeholder="精機型號" value={item.model} 
+                                                    onChange={e => {
+                                                        const val = e.target.value;
+                                                        const n = [...formData.items]; 
+                                                        n[index].model = val; 
+                                                        const priceObj = prices.find(p => p.model.toLowerCase() === val.trim().toLowerCase());
+                                                        if (priceObj) {
+                                                            n[index].unitPrice = priceObj.price;
+                                                            n[index].unitPriceUsd = priceObj.priceUsd || '';
+                                                            n[index].vendorModel = priceObj.vendorModel || '';
+                                                        }
+                                                        setFormData({...formData, items: n});
+                                                    }} 
+                                                    className="w-full px-2 py-1.5 text-sm border rounded outline-none" />
+                                                <div className="flex gap-1">
+                                                    <input type="number" step="0.01" placeholder="RMB" value={item.unitPrice} onChange={e => {const n=[...formData.items]; n[index].unitPrice=e.target.value; setFormData({...formData, items: n})}} className="w-1/2 px-2 py-1 text-xs border rounded text-center bg-white" />
+                                                    <input type="number" step="0.01" placeholder="USD" value={item.unitPriceUsd} onChange={e => {const n=[...formData.items]; n[index].unitPriceUsd=e.target.value; setFormData({...formData, items: n})}} className="w-1/2 px-2 py-1 text-xs border rounded text-center bg-white" />
                                                 </div>
-                                                
-                                                <input type="text" placeholder="廠商型號 (可手動修改)" value={item.vendorModel} onChange={e => {const n=[...formData.items]; n[index].vendorModel=e.target.value; setFormData({...formData, items: n})}} className="w-full sm:w-32 px-2 py-1.5 text-sm border rounded outline-none focus:ring-1 focus:ring-blue-500 shrink-0" />
-                                                
-                                                <input type="number" placeholder="數量" value={item.quantity} onChange={e => {const n=[...formData.items]; n[index].quantity=e.target.value; setFormData({...formData, items: n})}} className="w-14 px-2 py-1.5 text-sm border rounded text-center outline-none focus:ring-1 focus:ring-blue-500 shrink-0" />
-                                                
-                                                <input type="text" placeholder="備註" value={item.remark} onChange={e => {const n=[...formData.items]; n[index].remark=e.target.value; setFormData({...formData, items: n})}} className="flex-1 min-w-[80px] w-full px-2 py-1.5 text-sm border rounded outline-none focus:ring-1 focus:ring-blue-500" />
-                                                
-                                                <button type="button" onClick={() => setFormData({...formData, items: formData.items.filter((_,i)=>i!==index)})} disabled={formData.items.length===1} className="text-gray-400 hover:text-red-500 p-1 mt-1 disabled:opacity-30 shrink-0"><i className="fas fa-trash-alt"></i></button>
                                             </div>
-                                        )
-                                    })}
+                                            <input type="text" placeholder="廠商型號" value={item.vendorModel} onChange={e => {const n=[...formData.items]; n[index].vendorModel=e.target.value; setFormData({...formData, items: n})}} className="w-full sm:w-32 px-2 py-1.5 text-sm border rounded shrink-0" />
+                                            <input type="number" placeholder="數量" value={item.quantity} onChange={e => {const n=[...formData.items]; n[index].quantity=e.target.value; setFormData({...formData, items: n})}} className="w-14 px-2 py-1.5 text-sm border rounded text-center shrink-0" />
+                                            <input type="text" placeholder="備註" value={item.remark} onChange={e => {const n=[...formData.items]; n[index].remark=e.target.value; setFormData({...formData, items: n})}} className="flex-1 min-w-[80px] w-full px-2 py-1.5 text-sm border rounded" />
+                                            <button type="button" onClick={() => setFormData({...formData, items: formData.items.filter((_,i)=>i!==index)})} disabled={formData.items.length===1} className="text-gray-400 hover:text-red-500 p-1 mt-1 shrink-0"><i className="fas fa-trash-alt"></i></button>
+                                        </div>
+                                    ))}
                                 </div>
                                 <div className="flex justify-end">
-                                    <button type="submit" disabled={isSubmitting} className="bg-blue-600 text-white font-bold py-2 px-8 rounded shadow-sm hover:bg-blue-700 text-sm disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors">
-                                        {isSubmitting ? <><i className="fas fa-spinner fa-spin mr-2"></i>儲存中...</> : '儲存採購單'}
+                                    <button type="submit" disabled={isSubmitting} className="bg-blue-600 text-white font-bold py-2 px-8 rounded shadow-sm hover:bg-blue-700 text-sm">
+                                        {isSubmitting ? '儲存中...' : '儲存採購單'}
                                     </button>
                                 </div>
                             </form>
@@ -1209,7 +1412,7 @@
                                 <tr>
                                     <th className="px-5 py-3">訂單編號</th>
                                     <th className="px-5 py-3">供應商</th>
-                                    <th className="px-5 py-3 cursor-pointer hover:bg-gray-200" onClick={() => setSortOrder(prev => prev==='desc'?'asc':'desc')}>
+                                    <th className="px-5 py-3 cursor-pointer" onClick={() => setSortOrder(prev => prev==='desc'?'asc':'desc')}>
                                         訂單日期 <i className={`fas fa-arrow-${sortOrder==='desc'?'down':'up'} ml-1`}></i>
                                     </th>
                                     <th className="px-5 py-3">交期</th>
@@ -1247,180 +1450,69 @@
                                                     <td colSpan="7" className="p-0">
                                                         <div className="p-6 flex flex-col shadow-inner w-full">
                                                             <div className="w-full overflow-x-auto">
-                                                                
                                                                 <div className="flex justify-between items-center mb-3 border-b pb-2 flex-wrap gap-2">
                                                                     <h4 className="font-bold text-gray-800">訂單細項</h4>
                                                                     {isAdmin && (
                                                                         <div className="flex items-center gap-4 flex-wrap justify-end">
-                                                                            <div className="flex items-center bg-blue-50 px-3 py-1.5 border border-blue-200 rounded-lg shadow-sm">
-                                                                                <span className="text-xs text-blue-800 font-bold mr-2"><i className="fas fa-lock mr-1"></i>總金額 (內部)</span>
-                                                                                <span className="text-sm font-black text-blue-900">{formatRMB(order.amount)}</span>
-                                                                            </div>
-                                                                            
-                                                                            <div className="flex gap-2 flex-wrap justify-end">
-                                                                                {editingHeader.id === order.dbId ? null : (
-                                                                                    <button onClick={() => setEditingHeader({id: order.dbId, displayId: order.displayId, vendor: order.vendor, orderDate: order.orderDate, deliveryDate: order.deliveryDate, orderRemark: order.orderRemark || ''})} className="text-xs bg-yellow-50 text-yellow-700 px-2 py-1 rounded font-bold border border-yellow-200 hover:bg-yellow-100 transition-colors"><i className="fas fa-edit mr-1"></i>編輯採購單</button>
-                                                                                )}
-                                                                                
-                                                                                {editingItems.orderId === order.dbId ? (
-                                                                                    <div className="flex gap-2">
-                                                                                        <button onClick={saveEditedItems} className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded font-bold hover:bg-green-200 transition-colors"><i className="fas fa-save mr-1"></i>儲存明細</button>
-                                                                                        <button onClick={() => setEditingItems({orderId:null, items:[]})} className="text-xs bg-gray-200 px-2 py-1 rounded hover:bg-gray-300 transition-colors"><i className="fas fa-times mr-1"></i>取消</button>
-                                                                                    </div>
-                                                                                ) : (
-                                                                                    <button onClick={() => setEditingItems({orderId:order.dbId, items:JSON.parse(JSON.stringify(order.items||[]))})} className="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded font-bold border border-blue-200 hover:bg-blue-100 transition-colors"><i className="fas fa-list mr-1"></i>編輯明細</button>
-                                                                                )}
-                                                                                
-                                                                                <button onClick={() => handleDeleteOrder(order.dbId)} className="text-xs bg-red-50 text-red-600 px-2 py-1 rounded font-bold border border-red-200 hover:bg-red-100 transition-colors"><i className="fas fa-trash mr-1"></i>刪除採購單</button>
-                                                                            </div>
+                                                                            <span className="text-sm font-black text-blue-900">總金額: {formatRMB(order.amount)}</span>
+                                                                            <button onClick={() => handleDeleteOrder(order.dbId)} className="text-xs bg-red-50 text-red-600 px-2 py-1 rounded font-bold border border-red-200"><i className="fas fa-trash mr-1"></i>刪除採購單</button>
                                                                         </div>
                                                                     )}
                                                                 </div>
-
-                                                                {order.orderRemark && editingHeader.id !== order.dbId && (
-                                                                    <div className="mb-3 bg-white border border-orange-200 text-gray-700 text-sm px-3 py-2.5 rounded-lg shadow-sm">
-                                                                        <span className="font-bold text-orange-500 block mb-1"><i className="fas fa-sticky-note mr-1"></i>訂單備註：</span>
-                                                                        <span className="block whitespace-pre-wrap">{order.orderRemark}</span>
-                                                                    </div>
-                                                                )}
-
-                                                                {editingHeader.id === order.dbId && (
-                                                                    <div className="bg-yellow-50 p-3 rounded-lg mb-4 border border-yellow-200 shadow-sm">
-                                                                        <h5 className="text-xs font-bold text-yellow-800 mb-2">編輯採購單基本資訊</h5>
-                                                                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 mb-2">
-                                                                            <input type="text" value={editingHeader.displayId} onChange={e => setEditingHeader({...editingHeader, displayId: e.target.value})} placeholder="訂單編號" className="border p-1.5 text-sm rounded outline-none focus:ring-1 focus:ring-yellow-500" />
-                                                                            <select value={editingHeader.vendor} onChange={e => setEditingHeader({...editingHeader, vendor: e.target.value})} className="border p-1.5 text-sm rounded outline-none focus:ring-1 focus:ring-yellow-500 bg-white">
-                                                                                <option value="">請選擇供應商...</option>
-                                                                                {vendors.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
-                                                                            </select>
-                                                                            <input type="date" value={editingHeader.orderDate} onChange={e => setEditingHeader({...editingHeader, orderDate: e.target.value})} className="border p-1.5 text-sm rounded outline-none focus:ring-1 focus:ring-yellow-500" />
-                                                                            <input type="date" value={editingHeader.deliveryDate} onChange={e => setEditingHeader({...editingHeader, deliveryDate: e.target.value})} className="border p-1.5 text-sm rounded outline-none focus:ring-1 focus:ring-yellow-500" />
-                                                                        </div>
-                                                                        <input type="text" value={editingHeader.orderRemark} onChange={e => setEditingHeader({...editingHeader, orderRemark: e.target.value})} placeholder="訂單備註" className="w-full mb-2 border p-1.5 text-sm rounded outline-none focus:ring-1 focus:ring-yellow-500" />
-                                                                        <div className="flex gap-2 justify-end">
-                                                                            <button onClick={() => setEditingHeader({id: null, displayId: '', vendor: '', orderDate: '', deliveryDate: '', orderRemark: ''})} className="bg-gray-200 hover:bg-gray-300 text-gray-700 text-xs px-3 py-1.5 rounded font-bold transition-colors">取消</button>
-                                                                            <button onClick={saveEditedHeader} className="bg-yellow-500 hover:bg-yellow-600 text-white text-xs px-3 py-1.5 rounded font-bold transition-colors">儲存變更</button>
-                                                                        </div>
-                                                                    </div>
-                                                                )}
-
-                                                                {editingItems.orderId === order.dbId ? (
-                                                                    <div className="space-y-2">
-                                                                        {editingItems.items.map((item, idx) => (
-                                                                            <div key={idx} className="flex gap-2 mb-2 items-start flex-wrap sm:flex-nowrap min-w-max sm:min-w-0 pb-2 border-b sm:border-0 last:border-0">
-                                                                                <div className="flex flex-col gap-1 w-full sm:w-48 shrink-0">
-                                                                                    <input className="border p-1.5 text-sm w-full rounded outline-none focus:ring-1 focus:ring-blue-500" list="price-models" placeholder="精機型號" value={item.model} 
-                                                                                        onChange={e=>{
-                                                                                            const val = e.target.value;
-                                                                                            const n=[...editingItems.items]; 
-                                                                                            n[idx].model=val; 
-                                                                                            const priceObj = prices.find(p => p.model === val.trim());
-                                                                                            if (priceObj) {
-                                                                                                n[idx].unitPrice = priceObj.price;
-                                                                                                n[idx].unitPriceUsd = priceObj.priceUsd || '';
-                                                                                            }
-                                                                                            setEditingItems({...editingItems,items:n});
-                                                                                        }}/>
-                                                                                    <div className="flex gap-1">
-                                                                                        <input type="number" step="0.01" className="border p-1 text-xs w-1/2 rounded text-center outline-none focus:ring-1 focus:ring-blue-500 bg-white" placeholder="RMB" value={item.unitPrice} onChange={e=>{const n=[...editingItems.items]; n[idx].unitPrice=e.target.value; setEditingItems({...editingItems,items:n})}}/>
-                                                                                        <input type="number" step="0.01" className="border p-1 text-xs w-1/2 rounded text-center outline-none focus:ring-1 focus:ring-blue-500 bg-white" placeholder="USD" value={item.unitPriceUsd || ''} onChange={e=>{const n=[...editingItems.items]; n[idx].unitPriceUsd=e.target.value; setEditingItems({...editingItems,items:n})}}/>
-                                                                                    </div>
-                                                                                </div>
-                                                                                <input className="border p-1.5 text-sm w-full sm:w-32 rounded outline-none focus:ring-1 focus:ring-blue-500 shrink-0" placeholder="廠商型號" value={item.vendorModel || ''} onChange={e=>{const n=[...editingItems.items]; n[idx].vendorModel=e.target.value; setEditingItems({...editingItems,items:n})}}/>
-                                                                                <input type="number" className="border p-1.5 text-sm w-14 rounded text-center outline-none focus:ring-1 focus:ring-blue-500 shrink-0" placeholder="數量" value={item.quantity} onChange={e=>{const n=[...editingItems.items]; n[idx].quantity=e.target.value; setEditingItems({...editingItems,items:n})}}/>
-                                                                                <input className="border p-1.5 text-sm flex-1 min-w-[80px] w-full rounded outline-none focus:ring-1 focus:ring-blue-500" placeholder="備註" value={item.remark} onChange={e=>{const n=[...editingItems.items]; n[idx].remark=e.target.value; setEditingItems({...editingItems,items:n})}}/>
-                                                                                <button onClick={()=>{const n=editingItems.items.filter((_,i)=>i!==idx); setEditingItems({...editingItems,items:n})}} className="text-gray-400 hover:text-red-500 p-1 mt-1 shrink-0"><i className="fas fa-trash-alt"></i></button>
-                                                                            </div>
-                                                                        ))}
-                                                                        <button onClick={() => setEditingItems({...editingItems, items: [...editingItems.items, {model:'', vendorModel:'', quantity:1, unitPrice:'', unitPriceUsd:'', remark:''}]})} className="text-xs text-blue-600 font-bold bg-blue-100 px-2 py-1 rounded hover:bg-blue-200 mt-2"><i className="fas fa-plus mr-1"></i>新增一列</button>
-                                                                    </div>
-                                                                ) : (
-                                                                    <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm mt-2">
-                                                                        <table className="w-full text-left border-collapse min-w-[720px]">
-                                                                            <thead>
-                                                                                <tr className="bg-gray-100 text-xs font-semibold text-gray-600 border-b border-gray-200">
-                                                                                    <th className="py-2.5 px-3 w-44 whitespace-nowrap">精機型號</th>
-                                                                                    <th className="py-2.5 px-3 w-48 whitespace-nowrap">廠商型號</th>
-                                                                                    <th className="py-2.5 px-3 w-20 text-center whitespace-nowrap">數量</th>
-                                                                                    {isAdmin && <th className="py-2.5 px-3 w-28 text-right whitespace-nowrap">單價 (RMB)</th>}
-                                                                                    <th className="py-2.5 px-3 min-w-[150px] w-full whitespace-nowrap">備註</th>
-                                                                                    {isAdmin && <th className="py-2.5 px-3 w-12 text-center whitespace-nowrap">操作</th>}
+                                                                
+                                                                <div className="overflow-x-auto rounded-lg border bg-white shadow-sm mt-2">
+                                                                    <table className="w-full text-left">
+                                                                        <thead>
+                                                                            <tr className="bg-gray-100 text-xs font-semibold text-gray-600 border-b">
+                                                                                <th className="py-2 px-3">精機型號</th>
+                                                                                <th className="py-2 px-3">廠商型號</th>
+                                                                                <th className="py-2 px-3 text-center">數量</th>
+                                                                                {isAdmin && <th className="py-2 px-3 text-right">單價 (RMB)</th>}
+                                                                                <th className="py-2 px-3">備註</th>
+                                                                            </tr>
+                                                                        </thead>
+                                                                        <tbody className="divide-y text-sm">
+                                                                            {order.items?.map((item, idx) => (
+                                                                                <tr key={idx} className="hover:bg-blue-50/50">
+                                                                                    <td className="py-2 px-3 font-semibold">{item.model}</td>
+                                                                                    <td className="py-2 px-3 text-gray-600">{item.vendorModel || '-'}</td>
+                                                                                    <td className="py-2 px-3 text-center"><span className="bg-gray-100 px-2 py-0.5 rounded text-xs">x {item.quantity}</span></td>
+                                                                                    {isAdmin && <td className="py-2 px-3 text-right font-bold text-blue-700">{formatRMB(item.unitPrice || 0)}</td>}
+                                                                                    <td className="py-2 px-3 text-gray-500 text-xs">{item.remark || '-'}</td>
                                                                                 </tr>
-                                                                            </thead>
-                                                                            <tbody className="divide-y divide-gray-100 text-sm">
-                                                                                {order.items?.map((item, idx) => (
-                                                                                    <tr key={idx} className="hover:bg-blue-50/50 transition-colors">
-                                                                                        <td className="py-2 px-3 font-semibold text-gray-800 whitespace-nowrap overflow-hidden text-ellipsis max-w-[176px]" title={item.model}>
-                                                                                            {item.model}
-                                                                                        </td>
-                                                                                        <td className="py-2 px-3 text-gray-600 whitespace-nowrap overflow-hidden text-ellipsis max-w-[192px]" title={item.vendorModel}>
-                                                                                            {item.vendorModel || '-'}
-                                                                                        </td>
-                                                                                        <td className="py-2 px-3 text-center whitespace-nowrap">
-                                                                                            <span className="inline-block bg-gray-100 text-gray-700 font-bold px-2 py-0.5 rounded text-xs">
-                                                                                                x {item.quantity}
-                                                                                            </span>
-                                                                                        </td>
-                                                                                        {isAdmin && (
-                                                                                            <td className="py-2 px-3 text-right whitespace-nowrap">
-                                                                                                <span className="block font-bold text-blue-700 text-xs">
-                                                                                                    {formatRMB(item.unitPrice || 0)}
-                                                                                                </span>
-                                                                                                {item.unitPriceUsd ? (
-                                                                                                    <span className="block text-[10px] text-gray-400">
-                                                                                                        {formatUSD(item.unitPriceUsd)}
-                                                                                                    </span>
-                                                                                                ) : null}
-                                                                                            </td>
-                                                                                        )}
-                                                                                        <td className="py-2 px-3 text-gray-500 text-xs overflow-hidden text-ellipsis max-w-[250px] md:max-w-[500px]" title={item.remark}>
-                                                                                            {item.remark || '-'}
-                                                                                        </td>
-                                                                                        {isAdmin && (
-                                                                                            <td className="py-2 px-3 text-center whitespace-nowrap">
-                                                                                                <button 
-                                                                                                    onClick={() => handleDeleteItem(order, idx)} 
-                                                                                                    className="text-gray-400 hover:text-red-500 p-1 transition-colors" 
-                                                                                                    title="刪除此明細"
-                                                                                                >
-                                                                                                    <i className="fas fa-trash-alt"></i>
-                                                                                                </button>
-                                                                                            </td>
-                                                                                        )}
-                                                                                    </tr>
-                                                                                ))}
-                                                                            </tbody>
-                                                                        </table>
-                                                                    </div>
-                                                                )}
+                                                                            ))}
+                                                                        </tbody>
+                                                                    </table>
+                                                                </div>
                                                             </div>
-                                                        </div>
 
-                                                        {order.status !== '已收貨' ? (
-                                                            <div className="m-4 p-3 bg-white border border-blue-100 rounded-lg shadow-sm">
-                                                                <h4 className="text-sm font-bold mb-2 text-gray-800"><i className="fas fa-check-circle text-green-500 mr-1"></i>標記為已完成 (收貨)</h4>
-                                                                {isAdmin ? (
-                                                                    <div className="flex gap-3 items-center">
-                                                                        <input type="date" value={completeData.date} onChange={e=>setCompleteData({...completeData, date:e.target.value})} className="border rounded px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-green-500"/>
-                                                                        <input type="text" placeholder="輸入結案備註..." value={completeData.remark} onChange={e=>setCompleteData({...completeData, remark:e.target.value})} className="border rounded px-2 py-1.5 text-sm flex-1 outline-none focus:ring-1 focus:ring-green-500"/>
-                                                                        <button onClick={() => handleCompleteOrder(order.dbId)} className="bg-green-600 hover:bg-green-700 text-white px-5 py-1.5 rounded text-sm font-bold shadow-sm">確認完成</button>
-                                                                    </div>
-                                                                ) : <div className="text-sm text-red-600 bg-red-50 p-2.5 rounded border border-red-100 font-medium"><i className="fas fa-lock mr-2"></i>僅限授權帳號 (Ryan) 執行結案收貨。</div>}
-                                                            </div>
-                                                        ) : (
-                                                            <div className="m-4 p-3 bg-gray-100 rounded-lg text-xs text-gray-600 border border-gray-200">
-                                                                <i className="fas fa-check-circle text-gray-400 mr-1"></i>此訂單已於 <strong>{order.completionData?.date}</strong> 結案。 {order.completionData?.remark && <span>(備註：{order.completionData.remark})</span>}
-                                                            </div>
-                                                        )}
+                                                            {order.status !== '已收貨' ? (
+                                                                <div className="m-4 p-3 bg-white border border-blue-100 rounded-lg shadow-sm space-y-2">
+                                                                    <h4 className="text-sm font-bold text-gray-800"><i className="fas fa-check-circle text-green-500 mr-1"></i>標記為已完成 (收貨)</h4>
+                                                                    {isAdmin ? (
+                                                                        <div className="flex gap-3 items-center flex-wrap">
+                                                                            <input type="date" value={completeData.date} onChange={e=>setCompleteData({...completeData, date:e.target.value})} className="border rounded px-2 py-1.5 text-sm"/>
+                                                                            <select value={completeData.targetLoc} onChange={e=>setCompleteData({...completeData, targetLoc:e.target.value})} className="border rounded px-2 py-1.5 text-sm bg-white font-bold text-blue-700">
+                                                                                <option value="崑山">加入崑山庫存</option>
+                                                                                <option value="台灣">加入台灣庫存</option>
+                                                                            </select>
+                                                                            <input type="text" placeholder="輸入結案備註..." value={completeData.remark} onChange={e=>setCompleteData({...completeData, remark:e.target.value})} className="border rounded px-2 py-1.5 text-sm flex-1"/>
+                                                                            <button onClick={() => handleCompleteOrder(order.dbId)} className="bg-green-600 hover:bg-green-700 text-white px-5 py-1.5 rounded text-sm font-bold">確認完成</button>
+                                                                        </div>
+                                                                    ) : <div className="text-sm text-red-600 bg-red-50 p-2.5 rounded border">僅限授權帳號 (Ryan) 執行結案收貨。</div>}
+                                                                </div>
+                                                            ) : (
+                                                                <div className="m-4 p-3 bg-gray-100 rounded-lg text-xs text-gray-600 border">
+                                                                    此訂單已於 <strong>{order.completionData?.date}</strong> 結案。存入位置：{order.completionData?.targetLoc || '崑山'} {order.completionData?.remark && <span>(備註：{order.completionData.remark})</span>}
+                                                                </div>
+                                                            )}
+                                                        </div>
                                                     </td>
                                                 </tr>
                                             )}
                                         </React.Fragment>
                                     );
                                 })}
-                                {processedOrders.length === 0 && (
-                                    <tr><td colSpan="7" className="p-8 text-center text-gray-400">目前沒有符合的採購單紀錄</td></tr>
-                                )}
                             </tbody>
                         </table>
                     </div>
