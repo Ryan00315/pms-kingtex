@@ -104,8 +104,8 @@
                 modelItem: null, 
                 kunshan: 0, 
                 taiwan: 0, 
-                shipments: [], // 出貨紀錄
-                pendingShipments: [] // 預計出貨
+                shipments: [], 
+                pendingShipments: [] 
             });
             const [newShipmentInput, setNewShipmentInput] = useState({ unit: '', qty: '', recipient: '', date: todayStr });
 
@@ -211,7 +211,6 @@
                 }, 0);
             };
 
-            // 計算處理中採購單中特定機型的總數量
             const getPendingQtyForModel = (modelName) => {
                 let total = 0;
                 orders.forEach(o => {
@@ -264,7 +263,6 @@
                         const isPriceChanged = (rmbVal !== oldPrice);
                         if (isPriceChanged && !priceModal.reason.trim()) {
                             return alert("單價已變更，請務必填寫「本次異動原因」！");
-            
                         }
             
                         const usdVal = (item.priceUsd && item.priceUsd.toString().trim().toUpperCase() === 'N') ? 'N' : (item.priceUsd ? Number(item.priceUsd) : null);
@@ -400,7 +398,6 @@
             const handleCompleteOrder = async (orderDbId) => {
                 if (!completeData.date) return alert("請選擇完成時間");
                 try {
-                    // 自動加到對應庫存
                     const orderToComplete = orders.find(o => o.dbId === orderDbId);
                     if (orderToComplete && orderToComplete.items) {
                         const batch = db.batch();
@@ -498,7 +495,6 @@
                 }
             };
 
-            // 開啟庫存管理 Modal
             const openInventoryModal = (pItem) => {
                 const currentInv = inventory[pItem.model] || { kunshan: 0, taiwan: 0, shipments: [], pendingShipments: [] };
                 setInvModal({
@@ -839,12 +835,12 @@
                                                 <table className="w-full text-left min-w-max">
                                                     <thead className="bg-white text-xs text-gray-500 border-b">
                                                         <tr>
-                                                            <th className="p-3 w-72">精機型號 / 細項</th>
-                                                            <th className="p-3 w-40">廠商型號</th>
-                                                            <th className="p-3 text-center w-28">崑山庫存</th>
-                                                            <th className="p-3 text-center w-28">台灣庫存</th>
-                                                            <th className="p-3 text-center w-28 text-green-700">剩餘庫存</th>
-                                                            <th className="p-3 text-center w-32">BOM 功能</th>
+                                                            <th className="p-3 w-64">精機型號 / 細項</th>
+                                                            <th className="p-3 w-36">廠商型號</th>
+                                                            <th className="p-3 text-center w-24">崑山庫存</th>
+                                                            <th className="p-3 text-center w-24">台灣庫存</th>
+                                                            <th className="p-3 text-center w-24 text-green-700">剩餘庫存</th>
+                                                            <th className="p-3 text-center w-36">BOM 與管理</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody className="divide-y divide-gray-100 text-sm bg-white">
@@ -861,10 +857,11 @@
                                                                             <td colSpan="6" className="p-2 font-bold text-gray-800 pl-6"><i className="fas fa-tag mr-2 text-blue-500"></i>{mainModel}</td>
                                                                         </tr>
                                                                         {nestedPrices[vendor][category][mainModel].map(p => {
-                                                                            const inv = inventory[p.model] || { kunshan: 0, taiwan: 0 };
+                                                                            const inv = inventory[p.model] || { kunshan: 0, taiwan: 0, pendingShipments: [] };
                                                                             const kunCount = Number(inv.kunshan) || 0;
                                                                             const twCount = Number(inv.taiwan) || 0;
-                                                                            const totalRemaining = kunCount + twCount;
+                                                                            const pendingShipTotal = (inv.pendingShipments || []).reduce((sum, s) => sum + (Number(s.qty) || 0), 0);
+                                                                            const totalRemaining = kunCount + twCount - pendingShipTotal;
                                                                             const hasBom = p.bomItems && p.bomItems.length > 0;
 
                                                                             return (
@@ -877,9 +874,14 @@
                                                                                     <td className="p-3 text-center font-bold text-blue-600">{kunCount}</td>
                                                                                     <td className="p-3 text-center font-bold text-indigo-600">{twCount}</td>
                                                                                     <td className="p-3 text-center font-black text-green-600">{totalRemaining}</td>
-                                                                                    <td className="p-3 text-center">
+                                                                                    <td className="p-3 text-center whitespace-nowrap">
+                                                                                        {isAdmin && (
+                                                                                            <button onClick={() => openInventoryModal(p)} className="text-green-600 hover:text-green-800 bg-green-50 border border-green-200 px-2 py-1 rounded shadow-sm text-xs font-bold mr-1" title="管理庫存">
+                                                                                                <i className="fas fa-warehouse mr-1"></i>管理庫存
+                                                                                            </button>
+                                                                                        )}
                                                                                         <button onClick={() => setBomModal({ isOpen: true, priceId: p.id, modelName: p.model, items: p.bomItems ? JSON.parse(JSON.stringify(p.bomItems)) : [] })} className="text-purple-600 hover:text-purple-800 bg-purple-50 border border-purple-100 px-2 py-1 rounded shadow-sm text-xs font-bold">
-                                                                                            <i className="fas fa-boxes mr-1"></i>檢視 BOM
+                                                                                            <i className="fas fa-boxes mr-1"></i>BOM
                                                                                         </button>
                                                                                     </td>
                                                                                 </tr>
@@ -898,206 +900,12 @@
                             )}
                         </div>
 
-                        {/* BOM 檢視視窗 (唯讀) */}
-                        {bomModal.isOpen && (
-                            <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 overflow-y-auto">
-                                <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-4xl my-auto">
-                                    <div className="flex justify-between items-center mb-4 border-b pb-2">
-                                        <h2 className="text-lg font-bold text-purple-900"><i className="fas fa-boxes mr-2"></i>【{bomModal.modelName}】BOM (物料清單) 檢視</h2>
-                                        <button onClick={() => setBomModal({ isOpen: false, priceId: null, modelName: '', items: [] })} className="text-gray-400 hover:text-gray-800"><i className="fas fa-times"></i></button>
-                                    </div>
-                                    <div className="space-y-2 max-h-[50vh] overflow-y-auto p-1">
-                                        <div className="grid grid-cols-12 gap-2 text-xs font-bold text-gray-600 px-2">
-                                            <div className="col-span-3">料號</div>
-                                            <div className="col-span-4">名稱</div>
-                                            <div className="col-span-2 text-center">數量</div>
-                                            <div className="col-span-3">備註</div>
-                                        </div>
-                                        {bomModal.items.map((bItem, bIdx) => (
-                                            <div key={bIdx} className="grid grid-cols-12 gap-2 items-center bg-gray-50 p-2 rounded-lg border">
-                                                <div className="col-span-3 text-sm font-bold">{bItem.partNo || '-'}</div>
-                                                <div className="col-span-4 text-sm">{bItem.name || '-'}</div>
-                                                <div className="col-span-2 text-sm text-center">{bItem.qty || 1}</div>
-                                                <div className="col-span-3 text-sm text-gray-500">{bItem.remark || '-'}</div>
-                                            </div>
-                                        ))}
-                                        {bomModal.items.length === 0 && <div className="p-4 text-center text-gray-400">此機型尚無設定 BOM 物料清單。</div>}
-                                    </div>
-                                    <div className="mt-4 pt-4 border-t flex justify-end">
-                                        <button type="button" onClick={() => setBomModal({ isOpen: false, priceId: null, modelName: '', items: [] })} className="px-5 py-2 bg-gray-200 hover:bg-gray-300 rounded text-sm font-bold text-gray-700">關閉</button>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                );
-            }
-
-            // ---------------- 單價管理頁面 ----------------
-            if (currentView === 'PRICE_MANAGEMENT' && isAdmin) {
-                return (
-                    <div className="max-w-5xl mx-auto p-4 md:p-8 space-y-5">
-                        <div className="bg-white p-4 rounded-xl shadow-sm flex justify-between items-center border border-gray-200">
-                            <div>
-                                <h1 className="text-xl font-bold text-gray-900"><i className="fas fa-tags text-blue-600 mr-2"></i>精機單價管理中心</h1>
-                                <p className="text-xs text-gray-400 mt-1"><i className="fas fa-info-circle mr-1"></i>提示：在下方型號細項上**點擊兩下 (Double Click)** 可進入並建立該型號的 BOM。</p>
-                            </div>
-                            <div className="flex gap-2">
-                                <button onClick={() => setCurrentView('INVENTORY_MANAGEMENT')} className="bg-green-100 text-green-700 px-4 py-2 rounded-lg text-sm font-bold hover:bg-green-200">
-                                    <i className="fas fa-warehouse mr-2"></i>庫存查詢
-                                </button>
-                                <button onClick={() => setCurrentView('PO_LIST')} className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg text-sm font-bold hover:bg-gray-200">
-                                    <i className="fas fa-arrow-left mr-2"></i>返回採購單
-                                </button>
-                            </div>
-                        </div>
-
-                        <div className="bg-white rounded-xl shadow-sm border p-5">
-                            <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4 border-b border-gray-100 pb-4">
-                                <div className="flex w-full md:w-auto gap-2">
-                                    <select value={priceSearch.vendor} onChange={e => setPriceSearch({...priceSearch, vendor: e.target.value})} className="border border-gray-300 rounded px-3 py-2 text-sm focus:ring-1 focus:ring-blue-500 outline-none">
-                                        <option value="">-- 所有供應商 --</option>
-                                        <option value="未分類">未分類</option>
-                                        {vendors.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
-                                    </select>
-                                    <div className="relative flex-1 md:w-64">
-                                        <i className="fas fa-search absolute left-3 top-2.5 text-gray-400 text-sm"></i>
-                                        <input type="text" placeholder="搜尋精機或主型號..." value={priceSearch.model} onChange={e => setPriceSearch({...priceSearch, model: e.target.value})} className="pl-9 pr-3 py-2 w-full border border-gray-300 rounded text-sm focus:ring-1 focus:ring-blue-500 outline-none" />
-                                    </div>
-                                </div>
-                                <button onClick={() => { setPriceModal({ isOpen: true, id: null, vendor: '', category: '平縫', customCategory: '', mainModel: '', items: [{ model: '', vendorModel: '', price: '', priceUsd: '', remark: '' }], reason: '' }); }} className="w-full md:w-auto bg-blue-600 text-white px-4 py-2 rounded text-sm font-bold hover:bg-blue-700 shadow-sm whitespace-nowrap">
-                                    <i className="fas fa-plus mr-1"></i> 新增機型
-                                </button>
-                            </div>
-
-                            {Object.keys(nestedPrices).length === 0 ? (
-                                <div className="p-8 text-center text-gray-400">目前尚無符合的資料。</div>
-                            ) : (
-                                Object.keys(nestedPrices).map(vendor => (
-                                    <div key={vendor} className="mb-8 border border-gray-200 rounded-lg overflow-hidden shadow-sm">
-                                        <div className="bg-gray-100 px-4 py-3 border-b border-gray-200 flex justify-between items-center">
-                                            <h3 className="font-bold text-gray-800"><i className="fas fa-building text-gray-500 mr-2"></i>{vendor}</h3>
-                                        </div>
-                                        
-                                        <div className="overflow-x-auto">
-                                            <table className="w-full text-left min-w-max">
-                                                <thead className="bg-white text-xs text-gray-500 border-b">
-                                                    <tr>
-                                                        <th className="p-2 w-12"></th>
-                                                        <th className="p-2 w-72">精機型號 / 細項</th>
-                                                        <th className="p-2 w-40">廠商型號</th>
-                                                        <th className="p-2 text-right w-24">單價(RMB)</th>
-                                                        <th className="p-2 text-right w-24 border-l">單價(USD)</th>
-                                                        <th className="p-2 w-32">描述</th>
-                                                        <th className="p-2 text-center w-60">操作</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-gray-100 text-sm bg-white">
-                                                    {Object.keys(nestedPrices[vendor]).map(category => {
-                                                        const catKey = `${vendor}-${category}`;
-                                                        const isCatExp = expandedCategories[catKey] === true || priceSearch.model.trim() !== '';
-
-                                                        return (
-                                                            <React.Fragment key={category}>
-                                                                <tr className="bg-gray-50 cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => toggleCategoryExpand(catKey)}>
-                                                                    <td colSpan="7" className="p-2.5 font-bold text-pink-600 border-y shadow-inner">
-                                                                        <div className="flex items-center">
-                                                                            <i className={`fas fa-chevron-${isCatExp ? 'down' : 'right'} mr-2 text-xs text-gray-400 w-4 text-center`}></i>
-                                                                            <i className="fas fa-folder mr-2 text-pink-500"></i>
-                                                                            <span>【{category}】</span>
-                                                                        </div>
-                                                                    </td>
-                                                                </tr>
-                                                                
-                                                                {isCatExp && (() => {
-                                                                    const sortedMainModels = Object.keys(nestedPrices[vendor][category]).sort((a, b) => {
-                                                                        const idxA = nestedPrices[vendor][category][a][0]?.groupSortIndex ?? 9999;
-                                                                        const idxB = nestedPrices[vendor][category][b][0]?.groupSortIndex ?? 9999;
-                                                                        return idxA - idxB;
-                                                                    });
-
-                                                                    return sortedMainModels.map(mainModel => {
-                                                                        const groupKey = `${vendor}-${category}-${mainModel}`;
-                                                                        const isExp = expandedPrices[groupKey] === true || priceSearch.model.trim() !== ''; 
-                                                                        const items = nestedPrices[vendor][category][mainModel];
-                                                                        const isDraggable = priceSearch.model.trim() === ''; 
-
-                                                                        return (
-                                                                            <React.Fragment key={mainModel}>
-                                                                                <tr 
-                                                                                    draggable={isDraggable}
-                                                                                    onDragStart={(e) => handleMainModelDragStart(e, vendor, category, mainModel)}
-                                                                                    onDragEnd={handleMainModelDragEnd}
-                                                                                    onDragOver={handleMainModelDragOver}
-                                                                                    onDrop={(e) => handleMainModelDrop(e, vendor, category, mainModel)}
-                                                                                    className={`cursor-pointer transition-colors ${draggedMainModel?.mainModel === mainModel ? 'bg-blue-100' : 'hover:bg-gray-100'}`}
-                                                                                    onClick={() => togglePriceExpand(groupKey)}
-                                                                                >
-                                                                                    <td className="p-2 text-center text-gray-400">
-                                                                                        <i className={`fas fa-grip-vertical mr-2 ${isDraggable ? 'cursor-grab hover:text-gray-600' : 'opacity-30 cursor-not-allowed'}`}></i>
-                                                                                        <i className={`fas fa-chevron-${isExp?'up':'down'}`}></i>
-                                                                                    </td>
-                                                                                    <td colSpan="6" className="p-2 font-bold text-gray-900 text-base">{mainModel} <span className="text-xs text-gray-500 font-normal ml-2">({items.length} 個細項)</span></td>
-                                                                                </tr>
-                                                                                
-                                                                                {isExp && items.map((p) => {
-                                                                                    const hasBom = p.bomItems && p.bomItems.length > 0;
-                                                                                    return (
-                                                                                        <tr key={p.id} 
-                                                                                            draggable={isDraggable}
-                                                                                            onDragStart={(e) => { e.stopPropagation(); handleDragStart(e, p.id); }} 
-                                                                                            onDragEnd={handleDragEnd}
-                                                                                            onDragOver={handleDragOver} 
-                                                                                            onDrop={(e) => handleDrop(e, p.id, items)}
-                                                                                            className={`transition-colors bg-[#f4f9ff] hover:bg-blue-50 cursor-pointer ${draggedPriceId === p.id ? 'bg-blue-100' : ''}`}
-                                                                                        >
-                                                                                            <td className="p-2 text-center text-gray-300">
-                                                                                                <i className={`fas fa-grip-vertical ml-4 ${isDraggable ? 'cursor-grab hover:text-gray-500' : 'cursor-not-allowed opacity-50'}`}></i>
-                                                                                            </td>
-                                                                                            <td className="p-2 font-bold text-gray-800 flex items-center">
-                                                                                                <i className="fas fa-level-up-alt fa-rotate-90 text-gray-300 mr-2"></i>
-                                                                                                {p.model}
-                                                                                                {hasBom && <span className="ml-2 bg-blue-100 text-blue-800 text-[10px] px-1.5 py-0.5 rounded font-bold">BOM</span>}
-                                                                                            </td>
-                                                                                            <td className="p-2 text-gray-600">{p.vendorModel || '-'}</td>
-                                                                                            <td className="p-2 text-right pr-2 font-bold text-blue-700">{formatRMB(p.price)}</td>
-                                                                                            <td className="p-2 text-right pr-2 text-gray-500 border-l">{formatUSD(p.priceUsd)}</td>
-                                                                                            <td className="p-2 text-gray-500 text-xs truncate max-w-[120px]" title={p.remark}>{p.remark || '-'}</td>
-                                                                                            <td className="p-2 text-center whitespace-nowrap" onClick={e => e.stopPropagation()}>
-                                                                                                <button onClick={() => openInventoryModal(p)} className="text-green-600 hover:text-green-800 mx-1 bg-green-55 border border-green-200 px-2 py-1 rounded shadow-sm text-xs font-bold" title="管理庫存"><i className="fas fa-warehouse mr-1"></i>管理庫存</button>
-                                                                                                <button onClick={() => setBomModal({ isOpen: true, priceId: p.id, modelName: p.model, items: p.bomItems ? JSON.parse(JSON.stringify(p.bomItems)) : [] })} className="text-purple-600 hover:text-purple-800 mx-1 bg-purple-50 px-2 py-1 rounded shadow-sm text-xs font-bold" title="BOM"><i className="fas fa-boxes mr-1"></i>BOM</button>
-                                                                                                <button onClick={() => setPriceModal({ 
-                                                                                                    isOpen: true, id: p.id, vendor: p.vendor, 
-                                                                                                    category: p.category || '平縫', customCategory: '', mainModel: p.mainModel || '', 
-                                                                                                    items: [{ model: p.model, vendorModel: p.vendorModel || '', price: p.price, priceUsd: p.priceUsd || '', remark: p.remark || '' }], 
-                                                                                                    reason: '' 
-                                                                                                })} className="text-blue-600 hover:text-blue-800 mx-1 bg-blue-50 px-2 py-1 rounded shadow-sm text-xs" title="修改"><i className="fas fa-edit mr-1"></i>編輯</button>
-                                                                                                <button onClick={() => handleDeletePriceItem(p.id)} className="text-red-500 hover:text-red-700 mx-1 bg-red-50 px-2 py-1 rounded shadow-sm text-xs" title="刪除"><i className="fas fa-trash-alt mr-1"></i>刪除</button>
-                                                                                            </td>
-                                                                                        </tr>
-                                                                                    );
-                                                                                })}
-                                                                            </React.Fragment>
-                                                                        )
-                                                                    });
-                                                                })()}
-                                                            </React.Fragment>
-                                                        );
-                                                    })}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    </div>
-                                ))
-                            )}
-                        </div>
-
                         {/* 管理員庫存彈跳視窗 */}
                         {invModal.isOpen && (
                             <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 overflow-y-auto">
                                 <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-4xl my-auto space-y-4">
                                     <div className="flex justify-between items-center border-b pb-2">
-                                        <h2 className="text-lg font-bold text-green-900"><i className="fas fa-warehouse mr-2"></i>庫存管理：{invModal.modelItem?.model}</h2>
+                                        <h2 className="text-lg font-bold text-green-900"><i className="fas fa-warehouse mr-2"></i>管理庫存：{invModal.modelItem?.model}</h2>
                                         <button onClick={() => setInvModal({ isOpen: false, modelItem: null, kunshan: 0, taiwan: 0, shipments: [], pendingShipments: [] })} className="text-gray-400 hover:text-gray-800"><i className="fas fa-times"></i></button>
                                     </div>
 
@@ -1125,7 +933,7 @@
                                         </div>
                                     </div>
 
-                                    {/* 預計出貨清單與新增 */}
+                                    {/* 預計出貨項目管理 */}
                                     <div className="border-t pt-3">
                                         <h4 className="font-bold text-sm text-gray-800 mb-2">預計出貨項目管理</h4>
                                         <div className="flex gap-2 mb-3">
@@ -1177,6 +985,200 @@
                             </div>
                         )}
 
+                        {/* BOM 檢視視窗 */}
+                        {bomModal.isOpen && (
+                            <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 overflow-y-auto">
+                                <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-4xl my-auto">
+                                    <div className="flex justify-between items-center mb-4 border-b pb-2">
+                                        <h2 className="text-lg font-bold text-purple-900"><i className="fas fa-boxes mr-2"></i>【{bomModal.modelName}】BOM (物料清單) 檢視</h2>
+                                        <button onClick={() => setBomModal({ isOpen: false, priceId: null, modelName: '', items: [] })} className="text-gray-400 hover:text-gray-800"><i className="fas fa-times"></i></button>
+                                    </div>
+                                    <div className="space-y-2 max-h-[50vh] overflow-y-auto p-1">
+                                        <div className="grid grid-cols-12 gap-2 text-xs font-bold text-gray-600 px-2">
+                                            <div className="col-span-3">料號</div>
+                                            <div className="col-span-4">名稱</div>
+                                            <div className="col-span-2 text-center">數量</div>
+                                            <div className="col-span-3">備註</div>
+                                        </div>
+                                        {bomModal.items.map((bItem, bIdx) => (
+                                            <div key={bIdx} className="grid grid-cols-12 gap-2 items-center bg-gray-50 p-2 rounded-lg border">
+                                                <div className="col-span-3 text-sm font-bold">{bItem.partNo || '-'}</div>
+                                                <div className="col-span-4 text-sm">{bItem.name || '-'}</div>
+                                                <div className="col-span-2 text-sm text-center">{bItem.qty || 1}</div>
+                                                <div className="col-span-3 text-sm text-gray-500">{bItem.remark || '-'}</div>
+                                            </div>
+                                        ))}
+                                        {bomModal.items.length === 0 && <div className="p-4 text-center text-gray-400">此機型尚無設定 BOM 物料清單。</div>}
+                                    </div>
+                                    <div className="mt-4 pt-4 border-t flex justify-end">
+                                        <button type="button" onClick={() => setBomModal({ isOpen: false, priceId: null, modelName: '', items: [] })} className="px-5 py-2 bg-gray-200 hover:bg-gray-300 rounded text-sm font-bold text-gray-700">關閉</button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                );
+            }
+
+            // ---------------- 單價管理頁面 (完全恢復原狀) ----------------
+            if (currentView === 'PRICE_MANAGEMENT' && isAdmin) {
+                return (
+                    <div className="max-w-5xl mx-auto p-4 md:p-8 space-y-5">
+                        <div className="bg-white p-4 rounded-xl shadow-sm flex justify-between items-center border border-gray-200">
+                            <div>
+                                <h1 className="text-xl font-bold text-gray-900"><i className="fas fa-tags text-blue-600 mr-2"></i>精機單價管理中心</h1>
+                                <p className="text-xs text-gray-400 mt-1"><i className="fas fa-info-circle mr-1"></i>提示：在下方型號細項上**點擊兩下 (Double Click)** 可進入並建立該型號的 BOM。</p>
+                            </div>
+                            <button onClick={() => setCurrentView('PO_LIST')} className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg text-sm font-bold hover:bg-gray-200">
+                                <i className="fas fa-arrow-left mr-2"></i>返回採購單
+                            </button>
+                        </div>
+
+                        <div className="bg-white rounded-xl shadow-sm border p-5">
+                            <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4 border-b border-gray-100 pb-4">
+                                <div className="flex w-full md:w-auto gap-2">
+                                    <select value={priceSearch.vendor} onChange={e => setPriceSearch({...priceSearch, vendor: e.target.value})} className="border border-gray-300 rounded px-3 py-2 text-sm focus:ring-1 focus:ring-blue-500 outline-none">
+                                        <option value="">-- 所有供應商 --</option>
+                                        <option value="未分類">未分類</option>
+                                        {vendors.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
+                                    </select>
+                                    <div className="relative flex-1 md:w-64">
+                                        <i className="fas fa-search absolute left-3 top-2.5 text-gray-400 text-sm"></i>
+                                        <input type="text" placeholder="搜尋精機或主型號..." value={priceSearch.model} onChange={e => setPriceSearch({...priceSearch, model: e.target.value})} className="pl-9 pr-3 py-2 w-full border border-gray-300 rounded text-sm focus:ring-1 focus:ring-blue-500 outline-none" />
+                                    </div>
+                                </div>
+                                <button onClick={() => { setPriceModal({ isOpen: true, id: null, vendor: '', category: '平縫', customCategory: '', mainModel: '', items: [{ model: '', vendorModel: '', price: '', priceUsd: '', remark: '' }], reason: '' }); }} className="w-full md:w-auto bg-blue-600 text-white px-4 py-2 rounded text-sm font-bold hover:bg-blue-700 shadow-sm whitespace-nowrap">
+                                    <i className="fas fa-plus mr-1"></i> 新增機型
+                                </button>
+                            </div>
+
+                            {Object.keys(nestedPrices).length === 0 ? (
+                                <div className="p-8 text-center text-gray-400">目前尚無符合的資料。</div>
+                            ) : (
+                                Object.keys(nestedPrices).map(vendor => (
+                                    <div key={vendor} className="mb-8 border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+                                        <div className="bg-gray-100 px-4 py-3 border-b border-gray-200 flex justify-between items-center">
+                                            <h3 className="font-bold text-gray-800"><i className="fas fa-building text-gray-500 mr-2"></i>{vendor}</h3>
+                                        </div>
+                                        
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-left min-w-max">
+                                                <thead className="bg-white text-xs text-gray-500 border-b">
+                                                    <tr>
+                                                        <th className="p-2 w-12"></th>
+                                                        <th className="p-2 w-93">精機型號 / 細項</th>
+                                                        <th className="p-2 w-40">廠商型號</th>
+                                                        <th className="p-2 text-right w-24">單價(RMB)</th>
+                                                        <th className="p-2 text-right w-24 border-l">單價(USD)</th>
+                                                        <th className="p-2 w-40">描述</th>
+                                                        <th className="p-2 text-center w-48">操作</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-gray-100 text-sm bg-white">
+                                                    {Object.keys(nestedPrices[vendor]).map(category => {
+                                                        const catKey = `${vendor}-${category}`;
+                                                        const isCatExp = expandedCategories[catKey] === true || priceSearch.model.trim() !== '';
+
+                                                        return (
+                                                            <React.Fragment key={category}>
+                                                                <tr className="bg-gray-50 cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => toggleCategoryExpand(catKey)}>
+                                                                    <td colSpan="7" className="p-2.5 font-bold text-pink-600 border-y shadow-inner">
+                                                                        <div className="flex items-center">
+                                                                            <i className={`fas fa-chevron-${isCatExp ? 'down' : 'right'} mr-2 text-xs text-gray-400 w-4 text-center`}></i>
+                                                                            <i className="fas fa-folder mr-2 text-pink-500"></i>
+                                                                            <span>【{category}】</span>
+                                                                            <span className="text-xs text-gray-400 font-normal ml-2">({isCatExp ? '點擊收起' : '點擊展開'})</span>
+                                                                        </div>
+                                                                    </td>
+                                                                </tr>
+                                                                
+                                                                {isCatExp && (() => {
+                                                                    const sortedMainModels = Object.keys(nestedPrices[vendor][category]).sort((a, b) => {
+                                                                        const idxA = nestedPrices[vendor][category][a][0]?.groupSortIndex ?? 9999;
+                                                                        const idxB = nestedPrices[vendor][category][b][0]?.groupSortIndex ?? 9999;
+                                                                        return idxA - idxB;
+                                                                    });
+
+                                                                    return sortedMainModels.map(mainModel => {
+                                                                        const groupKey = `${vendor}-${category}-${mainModel}`;
+                                                                        const isExp = expandedPrices[groupKey] === true || priceSearch.model.trim() !== ''; 
+                                                                        const items = nestedPrices[vendor][category][mainModel];
+                                                                        const isDraggable = priceSearch.model.trim() === ''; 
+
+                                                                        return (
+                                                                            <React.Fragment key={mainModel}>
+                                                                                <tr 
+                                                                                    draggable={isDraggable}
+                                                                                    onDragStart={(e) => handleMainModelDragStart(e, vendor, category, mainModel)}
+                                                                                    onDragEnd={handleMainModelDragEnd}
+                                                                                    onDragOver={handleMainModelDragOver}
+                                                                                    onDrop={(e) => handleMainModelDrop(e, vendor, category, mainModel)}
+                                                                                    className={`cursor-pointer transition-colors ${draggedMainModel?.mainModel === mainModel ? 'bg-blue-100' : 'hover:bg-gray-100'}`}
+                                                                                    onClick={() => togglePriceExpand(groupKey)}
+                                                                                >
+                                                                                    <td className="p-2 text-center text-gray-400" title={isDraggable ? "拖曳以排序主型號" : "搜尋時無法拖曳排序"}>
+                                                                                        <i className={`fas fa-grip-vertical mr-2 ${isDraggable ? 'cursor-grab hover:text-gray-600' : 'opacity-30 cursor-not-allowed'}`}></i>
+                                                                                        <i className={`fas fa-chevron-${isExp?'up':'down'}`}></i>
+                                                                                    </td>
+                                                                                    <td colSpan="6" className="p-2 font-bold text-gray-900 text-base">{mainModel} <span className="text-xs text-gray-500 font-normal ml-2">({items.length} 個細項)</span></td>
+                                                                                </tr>
+                                                                                
+                                                                                {isExp && items.map((p) => {
+                                                                                    const hasBom = p.bomItems && p.bomItems.length > 0;
+                                                                                    return (
+                                                                                        <tr key={p.id} 
+                                                                                            draggable={isDraggable}
+                                                                                            onDragStart={(e) => { e.stopPropagation(); handleDragStart(e, p.id); }} 
+                                                                                            onDragEnd={handleDragEnd}
+                                                                                            onDragOver={handleDragOver} 
+                                                                                            onDrop={(e) => handleDrop(e, p.id, items)}
+                                                                                            onDoubleClick={() => setBomModal({ isOpen: true, priceId: p.id, modelName: p.model, items: p.bomItems ? JSON.parse(JSON.stringify(p.bomItems)) : [] })}
+                                                                                            className={`transition-colors bg-[#f4f9ff] hover:bg-blue-50 cursor-pointer ${draggedPriceId === p.id ? 'bg-blue-100' : ''}`}
+                                                                                            title="雙擊此列可進入建立 BOM"
+                                                                                        >
+                                                                                            <td className="p-2 text-center text-gray-300">
+                                                                                                <i className={`fas fa-grip-vertical ml-4 ${isDraggable ? 'cursor-grab hover:text-gray-500' : 'cursor-not-allowed opacity-50'}`}></i>
+                                                                                            </td>
+                                                                                            <td className="p-2 font-bold text-gray-800 w-93 flex items-center">
+                                                                                                <i className="fas fa-level-up-alt fa-rotate-90 text-gray-300 mr-2"></i>
+                                                                                                {p.model}
+                                                                                                {hasBom && <span className="ml-2 bg-blue-100 text-blue-800 text-[10px] px-1.5 py-0.5 rounded font-bold">BOM</span>}
+                                                                                            </td>
+                                                                                            <td className="p-2 text-gray-600">{p.vendorModel || '-'}</td>
+                                                                                            <td className={`p-2 text-right pr-2 font-bold ${hasBom ? 'text-blue-600 underline decoration-dotted' : 'text-blue-700'}`} title={hasBom ? "此價格由 BOM 計算帶入" : ""}>
+                                                                                                {formatRMB(p.price)}
+                                                                                            </td>
+                                                                                            <td className="p-2 text-right pr-2 text-gray-500 border-l">{formatUSD(p.priceUsd)}</td>
+                                                                                            <td className="p-2 text-gray-500 text-xs truncate max-w-[120px]" title={p.remark}>{p.remark || '-'}</td>
+                                                                                            <td className="p-2 text-center whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                                                                                                <button onClick={() => setBomModal({ isOpen: true, priceId: p.id, modelName: p.model, items: p.bomItems ? JSON.parse(JSON.stringify(p.bomItems)) : [] })} className="text-purple-600 hover:text-purple-800 mx-1 bg-purple-50 border border-purple-100 px-2 py-1 rounded shadow-sm text-xs font-bold" title="管理 BOM"><i className="fas fa-boxes mr-1"></i>BOM</button>
+                                                                                                <button onClick={() => setPriceModal({ 
+                                                                                                    isOpen: true, id: p.id, vendor: p.vendor, 
+                                                                                                    category: p.category || '平縫', customCategory: '', mainModel: p.mainModel || '', 
+                                                                                                    items: [{ model: p.model, vendorModel: p.vendorModel || '', price: p.price, priceUsd: p.priceUsd || '', remark: p.remark || '' }], 
+                                                                                                    reason: '' 
+                                                                                                })} className="text-blue-600 hover:text-blue-800 mx-1 bg-blue-50 border border-blue-100 px-2 py-1 rounded shadow-sm text-xs" title="修改"><i className="fas fa-edit mr-1"></i>編輯</button>
+                                                                                                <button onClick={() => setHistoryModal({ isOpen: true, model: p.model, history: p.history || [] })} className="text-gray-500 hover:text-gray-800 mx-1 bg-white border px-2 py-1 rounded shadow-sm text-xs" title="歷史紀錄"><i className="fas fa-history mr-1"></i>紀錄</button>
+                                                                                                <button onClick={() => handleDeletePriceItem(p.id)} className="text-red-500 hover:text-red-700 mx-1 bg-red-50 border border-red-100 px-2 py-1 rounded shadow-sm text-xs" title="刪除此細項"><i className="fas fa-trash-alt mr-1"></i>刪除</button>
+                                                                                            </td>
+                                                                                        </tr>
+                                                                                    );
+                                                                                })}
+                                                                            </React.Fragment>
+                                                                        )
+                                                                    });
+                                                                })()}
+                                                            </React.Fragment>
+                                                        );
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+
                         {/* BOM 管理視窗 */}
                         {bomModal.isOpen && (
                             <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 overflow-y-auto">
@@ -1226,6 +1228,123 @@
                                             <button type="button" onClick={handleSaveBom} className="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded text-sm font-bold shadow-sm">儲存 BOM 並更新單價</button>
                                         </div>
                                     </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* 修改/新增 單價表單視窗 */}
+                        {priceModal.isOpen && (
+                            <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 overflow-y-auto">
+                                <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-3xl my-auto">
+                                    <h2 className="text-lg font-bold mb-4 border-b pb-2 text-blue-900">{priceModal.id ? '編輯細項單價' : '新增主型號與細項'}</h2>
+                                    <form onSubmit={handleSavePrice} className="space-y-4">
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                            <div>
+                                                <label className="block text-xs font-bold mb-1 text-gray-700">供應商 (分類)</label>
+                                                <select value={priceModal.vendor} onChange={e => setPriceModal({...priceModal, vendor: e.target.value})} className="w-full border p-2 rounded text-sm bg-white focus:ring-1 focus:ring-blue-500 outline-none">
+                                                    <option value="">未分類</option>
+                                                    {vendors.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-bold mb-1 text-gray-700">分類 (機型種類)</label>
+                                                <select value={priceModal.category} onChange={e => setPriceModal({...priceModal, category: e.target.value})} className="w-full border p-2 rounded text-sm bg-white focus:ring-1 focus:ring-blue-500 outline-none">
+                                                    <option value="平縫">平縫</option>
+                                                    <option value="包縫">包縫</option>
+                                                    <option value="繃縫">繃縫</option>
+                                                    <option value="套結">套結</option>
+                                                    <option value="鎖縫">鎖縫</option>
+                                                    <option value="新增">-- 新增 (自訂) --</option>
+                                                </select>
+                                            </div>
+                                            {priceModal.category === '新增' && (
+                                                <div>
+                                                    <label className="block text-xs font-bold mb-1 text-blue-600">自訂分類名稱 <span className="text-red-500">*必填</span></label>
+                                                    <input type="text" value={priceModal.customCategory} onChange={e => setPriceModal({...priceModal, customCategory: e.target.value})} className="w-full border border-blue-200 p-2 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" placeholder="輸入新分類" required />
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-xs font-bold mb-1">主型號 (群組名稱) <span className="text-red-500">*必填</span></label>
+                                            <input type="text" value={priceModal.mainModel} onChange={e => setPriceModal({...priceModal, mainModel: e.target.value})} className="w-full border p-2 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" placeholder="例如：7000 系列" required />
+                                        </div>
+
+                                        <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
+                                            <div className="flex justify-between items-center mb-3 border-b pb-2">
+                                                <h3 className="text-sm font-bold text-gray-800">型號細項清單</h3>
+                                                {!priceModal.id && (
+                                                    <button type="button" onClick={() => setPriceModal({...priceModal, items: [...priceModal.items, {model:'', vendorModel:'', price:'', priceUsd:'', remark:''}]})} className="text-xs text-blue-600 font-bold bg-blue-100 px-2 py-1 rounded hover:bg-blue-200 whitespace-nowrap"><i className="fas fa-plus mr-1"></i>新增一列細項</button>
+                                                )}
+                                            </div>
+                                            
+                                            <div className="space-y-3">
+                                                {priceModal.items.map((item, index) => (
+                                                    <div key={index} className="flex gap-2 items-start flex-wrap sm:flex-nowrap bg-white p-2 rounded border shadow-sm">
+                                                        <div className="w-full sm:w-1/4">
+                                                            <input type="text" placeholder="精機型號 *" value={item.model} onChange={e => {const n=[...priceModal.items]; n[index].model=e.target.value; setPriceModal({...priceModal, items:n})}} className="w-full border p-1.5 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" required />
+                                                        </div>
+                                                        <div className="w-full sm:w-1/5">
+                                                            <input type="text" placeholder="廠商型號" value={item.vendorModel} onChange={e => {const n=[...priceModal.items]; n[index].vendorModel=e.target.value; setPriceModal({...priceModal, items:n})}} className="w-full border p-1.5 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" />
+                                                        </div>
+                                                        <div className="w-full sm:w-16 shrink-0">
+                                                            <input type="text" placeholder="RMB *" value={item.price} onChange={e => {const n=[...priceModal.items]; n[index].price=e.target.value; setPriceModal({...priceModal, items:n})}} className="w-full border p-1.5 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" required title="單價(RMB)" />
+                                                        </div>
+                                                        <div className="w-full sm:w-16 shrink-0">
+                                                            <input type="number" step="0.01" placeholder="USD" value={item.priceUsd} onChange={e => {const n=[...priceModal.items]; n[index].priceUsd=e.target.value; setPriceModal({...priceModal, items:n})}} className="w-full border p-1.5 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" title="單價(USD)" />
+                                                        </div>
+                                                        <div className="flex-1 min-w-[120px]">
+                                                            <input type="text" placeholder="描述 / 備註" value={item.remark} onChange={e => {const n=[...priceModal.items]; n[index].remark=e.target.value; setPriceModal({...priceModal, items:n})}} className="w-full border p-1.5 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" />
+                                                        </div>
+                                                        {!priceModal.id && priceModal.items.length > 1 && (
+                                                            <button type="button" onClick={() => setPriceModal({...priceModal, items: priceModal.items.filter((_,i)=>i!==index)})} className="text-gray-400 hover:text-red-500 p-1.5 mt-0.5 shrink-0"><i className="fas fa-trash-alt"></i></button>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        <div className="mt-4 pt-4 border-t">
+                                            <label className="block text-xs font-bold mb-1 text-gray-700">
+                                                本次異動原因 / 記錄備註 
+                                                <span className="text-gray-500 font-normal ml-1">
+                                                    {priceModal.id ? '(僅更改單價時必填)' : '(新增機型不需填寫)'}
+                                                </span>
+                                            </label>
+                                            <input type="text" value={priceModal.reason} placeholder="若修改單價，請務必填寫此處" onChange={e => setPriceModal({...priceModal, reason: e.target.value})} className="w-full border border-gray-300 p-2 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" />
+                                        </div>
+
+                                        <div className="flex gap-2 mt-6">
+                                            <button type="button" onClick={() => setPriceModal({isOpen: false, id: null, vendor: '', category: '平縫', customCategory: '', mainModel: '', items: [{ model: '', vendorModel: '', price: '', priceUsd: '', remark: '' }], reason: ''})} className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 rounded text-sm font-bold text-gray-700 transition-colors">取消</button>
+                                            <button type="submit" className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-bold shadow-sm transition-colors">儲存並寫入紀錄</button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* 歷史紀錄彈出視窗 */}
+                        {historyModal.isOpen && (
+                            <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+                                <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-lg max-h-[80vh] overflow-y-auto">
+                                    <div className="flex justify-between items-center mb-4 border-b pb-2">
+                                        <h2 className="text-lg font-bold text-gray-800">【{historyModal.model}】價格異動紀錄</h2>
+                                        <button onClick={() => setHistoryModal({isOpen: false, model: '', history: []})} className="text-gray-400 hover:text-gray-800"><i className="fas fa-times"></i></button>
+                                    </div>
+                                    <ul className="space-y-3">
+                                        {[...historyModal.history].reverse().map((record, i) => (
+                                            <li key={i} className="bg-gray-50 border p-3 rounded text-sm">
+                                                <div className="flex justify-between mb-1">
+                                                    <div>
+                                                        <span className="font-bold text-blue-700 mr-3">{formatRMB(record.price)}</span>
+                                                        <span className="text-gray-500">{formatUSD(record.priceUsd)}</span>
+                                                    </div>
+                                                    <span className="text-xs text-gray-500"><i className="far fa-clock mr-1"></i>{new Date(record.date).toLocaleString()}</span>
+                                                </div>
+                                                <p className="text-gray-600 text-xs mt-1">原因：{record.reason}</p>
+                                            </li>
+                                        ))}
+                                    </ul>
                                 </div>
                             </div>
                         )}
