@@ -202,7 +202,7 @@
             };
 
             const formatRMB = (amount) => new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY', maximumFractionDigits: 2 }).format(amount || 0);
-            const formatUSD = (amount) => amount ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(amount) : '-';
+            const formatUSD = (amount) => amount ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(amount) : '-' ;
             const isUnquoted = (val) => String(val).toUpperCase().trim() === 'N';
             
             const calculateFormTotal = () => {
@@ -801,7 +801,7 @@
                 );
             }
 
-            // ---------------- 庫存查詢頁面 (順序與單價管理完全同步) ----------------
+            // ---------------- 庫存查詢頁面 ----------------
             if (currentView === 'INVENTORY_MANAGEMENT') {
                 return (
                     <div className="max-w-6xl mx-auto p-4 md:p-8 space-y-5">
@@ -1063,8 +1063,12 @@
                 );
             }
 
-            // ---------------- 單價管理頁面 (維持原狀) ----------------
+            // ---------------- 單價管理頁面 (動態載入所有自訂分類) ----------------
             if (currentView === 'PRICE_MANAGEMENT' && isAdmin) {
+                // 自動收集目前所有已存在的分類（包含預設與自訂）
+                const allCategories = ['平縫', '包縫', '繃縫', '套結', '鎖縫', ...new Set(prices.map(p => p.category).filter(Boolean))];
+                const uniqueCategories = [...new Set(allCategories)];
+
                 return (
                     <div className="max-w-5xl mx-auto p-4 md:p-8 space-y-5">
                         <div className="bg-white p-4 rounded-xl shadow-sm flex justify-between items-center border border-gray-200">
@@ -1291,16 +1295,19 @@
                                             </div>
                                             <div>
                                                 <label className="block text-xs font-bold mb-1 text-gray-700">分類 (機型種類)</label>
-                                                <select value={priceModal.category} onChange={e => setPriceModal({...priceModal, category: e.target.value})} className="w-full border p-2 rounded text-sm bg-white focus:ring-1 focus:ring-blue-500 outline-none">
-                                                    <option value="平縫">平縫</option>
-                                                    <option value="包縫">包縫</option>
-                                                    <option value="繃縫">繃縫</option>
-                                                    <option value="套結">套結</option>
-                                                    <option value="鎖縫">鎖縫</option>
+                                                <select value={uniqueCategories.includes(priceModal.category) ? priceModal.category : '新增'} onChange={e => {
+                                                    const val = e.target.value;
+                                                    if (val === '新增') {
+                                                        setPriceModal({...priceModal, category: '新增'});
+                                                    } else {
+                                                        setPriceModal({...priceModal, category: val, customCategory: ''});
+                                                    }
+                                                }} className="w-full border p-2 rounded text-sm bg-white focus:ring-1 focus:ring-blue-500 outline-none">
+                                                    {uniqueCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
                                                     <option value="新增">-- 新增 (自訂) --</option>
                                                 </select>
                                             </div>
-                                            {priceModal.category === '新增' && (
+                                            {(priceModal.category === '新增' || !uniqueCategories.includes(priceModal.category)) && (
                                                 <div>
                                                     <label className="block text-xs font-bold mb-1 text-blue-600">自訂分類名稱 <span className="text-red-500">*必填</span></label>
                                                     <input type="text" value={priceModal.customCategory} onChange={e => setPriceModal({...priceModal, customCategory: e.target.value})} className="w-full border border-blue-200 p-2 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500" placeholder="輸入新分類" required />
@@ -1485,9 +1492,9 @@
                         </div>
                         <div className="flex items-center gap-2">
                             <i className="far fa-calendar text-gray-400"></i>
-                            <input type="date" value={dateRange.start} onChange={e => setSearchQuery({...dateRange, start: e.target.value})} className="border rounded-lg px-2 py-1.5 text-sm" />
+                            <input type="date" value={dateRange.start} onChange={e => setDateRange({...dateRange, start: e.target.value})} className="border rounded-lg px-2 py-1.5 text-sm" />
                             <span className="text-gray-500">至</span>
-                            <input type="date" value={dateRange.end} onChange={e => setSearchQuery({...dateRange, end: e.target.value})} className="border rounded-lg px-2 py-1.5 text-sm" />
+                            <input type="date" value={dateRange.end} onChange={e => setDateRange({...dateRange, end: e.target.value})} className="border rounded-lg px-2 py-1.5 text-sm" />
                         </div>
                     </div>
 
